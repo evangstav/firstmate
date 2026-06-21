@@ -326,8 +326,8 @@ Steer a crewmate only with short single lines via `bin/fm-send.sh`; anything lon
 
 A ship task's path from `done` to landed on `main` is set by the project's `mode` (recorded in meta; section 6); `yolo` decides who approves. The Validate / PR ready / Ship teardown stages below are written for the `no-mistakes` path; the other modes diverge:
 
-- **no-mistakes** - the stages below as written: no-mistakes validation pipeline -> PR -> captain merge.
-- **direct-PR** - no pipeline. The crewmate pushes and opens the PR itself (its brief says so) and reports `done: PR <url>`. Skip the Validate step and go straight to PR ready (run `fm-pr-check`, relay the PR). Teardown uses the normal pushed-branch check.
+- **no-mistakes** - the crewmate validates locally (review/test/document/lint via `no-mistakes axi run --skip=push,pr,ci`, fixing actionable findings on its branch) and then opens a PR **against main** with the forge tool (`gh-axi` / `ado-axi`), reporting `done: PR <url>`. Validation lives in the brief, so firstmate does **not** send `/no-mistakes`; skip straight to PR ready (run `fm-pr-check`, relay the PR). Captain merges.
+- **direct-PR** - no gate. The crewmate opens the PR itself **against main** (its brief says so) and reports `done: PR <url>`. Go straight to PR ready (run `fm-pr-check`, relay the PR). Teardown uses the normal pushed-branch check.
 - **local-only** - no remote, no PR. The crewmate stops at `done: ready in branch fm/<id>`. Review the diff with `bin/fm-review-diff.sh <id>`, relay a one-paragraph summary to the captain, and on approval run `bin/fm-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the crewmate rebase). No `fm-pr-check`. Then teardown, whose safety check requires the branch already merged into local `main`.
 
 When reviewing any crewmate branch diff, use `bin/fm-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
@@ -337,17 +337,11 @@ Pooled clones keep their local default refs frozen at clone time and can lag `or
 
 ### Validate
 
-For `no-mistakes`-mode ship tasks, when a crewmate's status says `done`, trigger validation using the crew's harness from `state/<id>.meta`.
-Use `/no-mistakes` for claude, `$no-mistakes` for codex; natural language also works.
-For example, with claude:
+Validation lives in the crewmate's brief, not a firstmate-issued command. A `no-mistakes`-mode crewmate runs the gate itself — `no-mistakes axi run --intent "<goal>" --skip=push,pr,ci --yes` (review, test, document, lint; no push/PR/CI) — fixes the actionable findings on its branch, and only then opens a PR **against main** with the forge tool, reporting `done: PR <url>`. So for both `no-mistakes` and `direct-PR` tasks you do **not** send `/no-mistakes`; go straight to PR ready below.
 
-```sh
-bin/fm-send.sh fm-<id> '/no-mistakes'
-```
+Every project's PR targets `main`, regardless of forge: `gh-axi pr create --base main` on GitHub, `ado-axi pr create --target main` on Azure DevOps. The forge is resolved per project (`fm-forge.sh`, section 6) and baked into the brief.
 
-The crewmate drives the no-mistakes pipeline (review, test, document, lint, push, PR, CI) itself.
-It fixes auto-fix findings on its own.
-When it reports `needs-decision` (ask-user findings), relay the findings to the captain unless `yolo=on` permits routine approval on your judgment, then send the decision back as a short instruction (the crewmate responds via `no-mistakes axi respond`).
+If a crewmate reports `needs-decision` (an ask-user finding the gate surfaced), relay it to the captain unless `yolo=on` permits routine approval, then send the decision back as one line (the crewmate responds via `no-mistakes axi respond`).
 Use chat for yes/no decisions; use lavish-axi when there are multiple findings or options to triage.
 
 ### PR ready
