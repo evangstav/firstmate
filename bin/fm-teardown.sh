@@ -27,6 +27,9 @@ KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=no-mistakes
+# fmw work item this task implements, if dispatched via fm-dispatch.sh (read before the
+# meta is cleared below; the issue is closed once the work has landed).
+WORK=$(grep '^work=' "$META" | cut -d= -f2- || true)
 
 default_branch() {
   local ref branch
@@ -101,5 +104,15 @@ tmux kill-window -t "$T" 2>/dev/null || true
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts"
 if [ "$KIND" != scout ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
+fi
+# A ship task reaching teardown has landed (PR merged, or local-only merged into main),
+# so close its work item. Scouts deliver a report, not a landed change — leave their
+# issue open for the captain to triage or promote.
+if [ "$KIND" != scout ] && [ -n "$WORK" ]; then
+  if ( cd "$PROJ" && "$FM_ROOT/bin/fm-work.sh" close "$WORK" >/dev/null 2>&1 ); then
+    echo "closed work item $WORK"
+  else
+    echo "warn: could not close work item $WORK in the store; close it manually" >&2
+  fi
 fi
 echo "teardown $ID complete (window $T, worktree $WT)"

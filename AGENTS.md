@@ -60,7 +60,7 @@ README.md            public overview and development notes
 bin/                 helper scripts, committed, including fm-fleet-sync.sh for clean default-branch refreshes and gone-branch pruning; read each script's header before first use
 config/crew-harness  crewmate harness override; LOCAL, gitignored; absent or "default" = same as firstmate
 data/                personal fleet records; LOCAL, gitignored as a whole
-  backlog.md         task queue, dependencies, history
+  backlog.md         transient in-flight view for recovery; durable work is the fmw store (section 12)
   captain.md         captain's curated personal preferences and working style - approval posture, communication style, release habits; LOCAL, gitignored; compact rewrite-and-prune counterpart to shared AGENTS.md; canonical harness-portable home, even if harness memory mirrors it as a recall cache
   projects.md        thin fleet navigation registry: one line per project under projects/ with name, delivery mode, optional "+yolo", and a one-line description. It is firstmate-private, not a project knowledge dump; fm-project-mode.sh parses it (section 6)
   <id>/brief.md      per-task crewmate brief
@@ -69,7 +69,7 @@ projects/            cloned repos; gitignored; READ-ONLY for you
 state/               volatile runtime signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" lines
   <id>.turn-ended    touched by turn-end hooks
-  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo= (fm-pr-check appends pr=)
+  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo= (fm-pr-check appends pr=; fm-dispatch appends work=, the fmw issue id)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   .wake-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
@@ -302,6 +302,8 @@ Write the brief per section 11.
 
 ### Spawn
 
+When the task comes from a work item (the normal path), dispatch with `bin/fm-dispatch.sh <issue-id> <repo-path>` instead of calling `fm-spawn.sh` directly: it seeds the brief from the issue, spawns, flips the issue to `in_progress`, and links it for auto-close on land (section 12). Use bare `fm-spawn.sh` only for ad-hoc tasks with no work item behind them.
+
 ```sh
 bin/fm-spawn.sh <id> projects/<repo>             # uses the active crewmate harness
 bin/fm-spawn.sh <id> projects/<repo> codex       # per-task harness override
@@ -472,8 +474,8 @@ As a courtesy, mention cost when unusually much work is running (more than ~8 co
 
 ## 10. Backlog format
 
-`data/backlog.md` is the durable queue.
-Update it on every dispatch, completion, and decision.
+`data/backlog.md` is a transient view of in-flight dispatches for recovery, not the durable store — durable work lives in the fmw work store (section 12).
+Update it on every dispatch, completion, and decision so a restart can reconcile live crewmates.
 
 ```markdown
 ## In flight
@@ -504,3 +506,26 @@ Scout briefs do not include the project-memory step, because their deliverable i
 The status-reporting protocol is intentionally sparse: crewmates append status only for supervisor-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes firstmate.
 Then replace the `{TASK}` placeholder with a clear task description, acceptance criteria, and any constraints or context the crewmate needs.
 Adjust the other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
+
+## 12. Work store (fmw)
+
+Durable work lives in the **fmw work store** - one `<project>/.work/issues.jsonl` per project - not in `data/backlog.md`. fmw keeps issues with `parent` (epics), `blocked_by` (ordering), `status`, `priority`, `repo` (ship target), and `assignee` (canonical people id), and computes `ready = open with no open blocker`. firstmate is the operator interface over it; `data/backlog.md` is now only a transient view of in-flight dispatches for recovery.
+
+Run fmw through `bin/fm-work.sh` (it locates the binary; never call `fmw` directly so installation stays configurable):
+
+- `fm-work.sh ready --project <wrapper>` - dispatchable work, the hot path.
+- `fm-work.sh blocked | list | show <id> | epic <id> | board` - views (`board` renders a readable markdown projection).
+- `fm-work.sh create "<title>" --project <wrapper> [--repo <repo>] [--parent <id>] [--blocked-by <id>] [--priority N] [--label L]` - capture work. **This is the front door:** a captain brain-dump or a scout finding becomes a durable issue here, never a lost backlog line.
+- `fm-work.sh update <id> [--status --priority --assignee --repo --add-block --rm-block ...]` / `fm-work.sh close <id>` - mutate.
+
+The store resolves by walking up from the current directory to `.work/`, so running fmw from inside a repo finds its project's store. `<wrapper>` is the project directory name (e.g. `admie-project`), matching the issue's `project` field.
+
+### The loop
+
+1. **Source.** `fm-work.sh ready --project <wrapper>` lists what can start now; pick by priority and captain intent. Resolve the project exactly as section 7 Intake.
+2. **Target a repo.** For a multi-repo project, the issue names its repo in `issue.repo` (set it with `fm-work.sh update <id> --repo <repo>` when dispatching). The on-disk path is `<wrapper>/<repo>` under the workspace.
+3. **Dispatch.** `bin/fm-dispatch.sh <issue-id> <repo-path> [harness] [--scout]` bridges one issue into the spawn machinery: it seeds the brief from the issue's title + body, spawns a crewmate against `<repo-path>` (forge/mode resolved per project, section 6), flips the issue to `in_progress`, and records `work=<id>` in the task meta. The issue id doubles as the firstmate task id, so window/brief/state all trace to one id. Use bare `fm-spawn.sh` only for ad-hoc tasks not backed by a work item.
+4. **Ship.** Exactly as section 7 - the delivery mode + forge (`gh-axi` / `ado-axi`) carry the change to a PR or local merge.
+5. **Land = close.** When a ship task reaches `fm-teardown.sh` (PR merged, or local-only merged into local `main`), teardown closes the work item automatically. Scouts are the carve-out: their report is the deliverable, so their issue stays open for the captain to triage or `bin/fm-promote.sh`.
+
+Closed work lives on in the store (`status=done`) plus its PR/merge, so nothing is lost. Dependencies hold across the fleet: an issue stays out of `ready` until every `blocked_by` issue is `done`.
