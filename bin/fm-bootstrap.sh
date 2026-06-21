@@ -83,4 +83,6 @@ crew=
 [ -f "$FM_ROOT/config/crew-harness" ] && crew=$(tr -d '[:space:]' < "$FM_ROOT/config/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
 fleet_sync
+# Reclaim verified-safe stale treehouse slots; surface deleted-repo orphans as TREE_ORPHAN.
+"$FM_ROOT/bin/fm-prune-trees.sh" --bootstrap 2>/dev/null || true
 exit 0

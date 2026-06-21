@@ -89,6 +89,7 @@ Never install anything the captain has not approved in this session.
 Run `bin/fm-bootstrap.sh`.
 Bootstrap also refreshes the fleet via `bin/fm-fleet-sync.sh`: it fetches each remote-backed clone, clean-fast-forwards its local default branch when safe, and prunes local branches whose upstream is gone and that no worktree still needs, best-effort and non-fatal.
 Set `FM_FLEET_PRUNE=0` to temporarily disable that branch pruning.
+Bootstrap then reclaims verified-safe stale treehouse worktree slots and reports deleted-repo orphans via `TREE_ORPHAN` (`bin/fm-prune-trees.sh`); it never touches a slot with a running process, uncommitted changes, or an unmerged HEAD, so an in-flight crewmate's worktree is always safe.
 Silence means all good: say nothing and move on.
 Otherwise it prints one line per problem; handle each:
 
@@ -96,6 +97,7 @@ Otherwise it prints one line per problem; handle each:
 - `NEEDS_GH_AUTH` - ask the captain to run `! gh auth login` (interactive; you cannot run it for them).
 - `CREW_HARNESS_OVERRIDE: <name>` - record and use the override silently; surface a harness fact only if it actually blocks work or the captain asks.
 - `FLEET_SYNC: <repo>: skipped: <reason>` - bootstrap continued; investigate only if the dirty, diverged, or offline clone blocks work.
+- `TREE_ORPHAN: <message>` - a treehouse pool slot's backing repo was deleted. Bootstrap already auto-pruned verified-safe stale slots (those with no running process, no uncommitted changes, and a merged HEAD); orphans are not auto-removed because a missing repo can't be verified for unmerged or uncommitted work. Mention it to the captain and offer `bin/fm-prune-trees.sh --orphans` to reclaim it.
 
 Bootstrap's fleet refresh is bounded by `FM_FLEET_SYNC_BOOTSTRAP_TIMEOUT` seconds, default 20; a timeout is reported as a `FLEET_SYNC` skip and does not block startup.
 
