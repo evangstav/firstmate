@@ -16,8 +16,21 @@ if [ -f "$META" ] && ! grep -qxF "pr=$URL" "$META"; then
   echo "pr=$URL" >> "$META"
 fi
 
-cat > "$FM_ROOT/state/$ID.check.sh" <<EOF
+# Forge-aware merge poll: GitHub PRs report state=MERGED; Azure DevOps PRs report
+# status=completed. The URL host tells the two apart (no registry lookup needed here).
+case "$URL" in
+  *dev.azure.com*|*visualstudio.com*)
+    PRID="${URL##*/}"
+    cat > "$FM_ROOT/state/$ID.check.sh" <<EOF
+status=\$(ado-axi pr show "$PRID" 2>/dev/null | sed -n 's/^[[:space:]]*status:[[:space:]]*//p' | head -1)
+[ "\$status" = "completed" ] && echo "merged"
+EOF
+    ;;
+  *)
+    cat > "$FM_ROOT/state/$ID.check.sh" <<EOF
 state=\$(gh pr view "$URL" --json state -q .state 2>/dev/null)
 [ "\$state" = "MERGED" ] && echo "merged"
 EOF
+    ;;
+esac
 echo "armed: state/$ID.check.sh polls $URL"

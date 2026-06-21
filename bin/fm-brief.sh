@@ -31,6 +31,9 @@ done
 ID=${POS[0]}
 REPO=${POS[1]}
 
+# Forge tool: gh-axi for GitHub projects, ado-axi for Azure DevOps (+ado in the registry).
+FORGE_TOOL=$("$FM_ROOT/bin/fm-forge.sh" tool "$REPO" 2>/dev/null || echo gh-axi)
+
 BRIEF="$FM_ROOT/data/$ID/brief.md"
 [ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
 mkdir -p "$FM_ROOT/data/$ID"
@@ -51,7 +54,7 @@ The report is the only thing that survives, so anything worth keeping must be in
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+3. Use $FORGE_TOOL for pull-request / forge operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $FM_ROOT/state/$ID.status\`
    States: working, needs-decision, blocked, done, failed.
@@ -86,7 +89,7 @@ case "$MODE" in
 # Definition of done
 This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+When it is implemented and committed, push your branch and open a PR with \`$FORGE_TOOL\`, then append \`done: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The captain reviews and merges the PR; firstmate relays it.
 EOF
 )
@@ -133,7 +136,7 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 # Rules
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+3. Use $FORGE_TOOL for pull-request / forge operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $FM_ROOT/state/$ID.status\`
    States: working, needs-decision, blocked, done, failed.

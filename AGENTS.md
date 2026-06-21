@@ -247,6 +247,8 @@ Do not eagerly backfill every project.
 
 Orthogonal to mode is an optional `+yolo` flag (`[direct-PR +yolo]`), default off and **not recommended**: with `yolo` on, firstmate makes the approval decisions itself instead of asking the captain (section 7). When the captain adds a project without saying, default to `no-mistakes` with yolo off; only set a faster mode or `+yolo` on the captain's explicit say-so.
 
+Also orthogonal is the **forge** — where the project's pull requests live. Default is GitHub; an Azure DevOps project marks itself with a `+ado` token (`[direct-PR +ado]`). The forge selects the PR tool: `gh-axi` for GitHub, `ado-axi` for Azure DevOps. `bin/fm-forge.sh <name>` resolves it (`tool <name>` prints the CLI), and `fm-brief.sh`/`fm-pr-check.sh` consume it so a crewmate is told the right tool and the merge poll watches the right signal (GitHub `MERGED` vs ADO `completed`). Forge is independent of mode: a `local-only +ado` project never opens a PR at all, while a `direct-PR +ado` project ships through `ado-axi`. `ado-axi` resolves its own org/project/repo from the `dev.azure.com` origin and reads the PAT from the git credential helper (the `azp` model), so no extra auth wiring is needed.
+
 **Clone existing:** `git clone <url> projects/<name>`, add its registry line with the chosen mode, then initialize only if the mode is `no-mistakes`.
 
 **Create new:** for `no-mistakes` and `direct-PR` modes a new project needs a GitHub repo first (they push to an `origin` remote); a `local-only` project needs no remote at all - a purely local git repo is fine.
