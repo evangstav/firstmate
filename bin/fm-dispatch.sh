@@ -24,7 +24,7 @@ PASS=("$@")  # harness and/or --scout, forwarded to brief/spawn
 [ -d "$REPO" ] || { echo "fm-dispatch: repo path not found: $REPO" >&2; exit 1; }
 
 SCOUT=""
-for a in "${PASS[@]:-}"; do [ "$a" = "--scout" ] && SCOUT=1; done
+for a in ${PASS[@]+"${PASS[@]}"}; do [ "$a" = "--scout" ] && SCOUT=1; done
 
 # Pull the issue (store resolves by walking up from the repo to the project's .work).
 ISSUE_JSON=$( cd "$REPO" && "$WORK" show "$ID" --json ) || {
@@ -39,7 +39,7 @@ print(d.get("title","").replace("\n"," "), (d.get("body","") or "").replace("\n"
 
 # Scaffold the standard brief, then replace {TASK} with the issue content.
 REPO_NAME=$(basename "$REPO")
-"$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO_NAME" "${PASS[@]:-}" >/dev/null
+"$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO_NAME" ${PASS[@]+"${PASS[@]}"} >/dev/null
 BRIEF="$FM_ROOT/data/$ID/brief.md"
 TASK_TEXT="Implement work item \`$ID\`: $TITLE
 
@@ -55,7 +55,7 @@ open(p, "w").write(s)
 PYEOF
 
 # Spawn against the repo (forge/mode resolved per-project inside fm-spawn).
-"$FM_ROOT/bin/fm-spawn.sh" "$ID" "$REPO" "${PASS[@]:-}"
+"$FM_ROOT/bin/fm-spawn.sh" "$ID" "$REPO" ${PASS[@]+"${PASS[@]}"}
 
 # Record the work-store link and flip the issue to in_progress.
 echo "work=$ID" >> "$FM_ROOT/state/$ID.meta"
