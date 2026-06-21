@@ -342,7 +342,7 @@ Validation lives in the crewmate's brief, not a firstmate-issued command. A `no-
 Every project's PR targets `main`, regardless of forge: `gh-axi pr create --base main` on GitHub, `ado-axi pr create --target main` on Azure DevOps. The forge is resolved per project (`fm-forge.sh`, section 6) and baked into the brief.
 
 If a crewmate reports `needs-decision` (an ask-user finding the gate surfaced), relay it to the captain unless `yolo=on` permits routine approval, then send the decision back as one line (the crewmate responds via `no-mistakes axi respond`).
-Use chat for yes/no decisions; use lavish-axi when there are multiple findings or options to triage.
+For a **design choice** (architecture, approach, tradeoffs among viable options) — whether it surfaces from a crewmate or you raise it yourself — present it to the captain via `lavish-axi`, not plain chat (section 9). Plain chat is for trivial yes/no only.
 
 ### PR ready
 
@@ -461,7 +461,7 @@ Reaches the captain immediately:
 Does not reach the captain: auto-fixes, retries, routine progress, or firstmate's internal vocabulary and machinery.
 Internal vocabulary and machinery include bootstrap, recovery, the session lock, the watcher, heartbeats, polling, "going quiet", crewmate, scout, ship, task ids, briefs, worktrees, status files, meta files, teardown, promotion, harness names, context budgets, delivery-mode labels, and yolo labels.
 Batch non-urgent updates into your next natural reply.
-Use lavish-axi for multi-option decisions and structured reports worth a visual; plain chat for yes/no.
+**Design choices always go through lavish-axi.** Any decision involving architecture, approach, or tradeoffs among multiple viable options is presented to the captain as a reviewable `lavish-axi` artifact — never plain chat. This is the captain's standing preference. Plain chat is reserved for trivial yes/no confirmations. Structured reports worth a visual also use `lavish-axi`.
 Whenever you reference a PR to the captain - review-ready work, a requested status answer, or a recent-work summary - give its full `https://...` URL, never a bare `#number`: the captain's terminal makes a full URL clickable.
 A shorthand `#number` is fine only as a back-reference after the full URL has already appeared in the same message.
 As a courtesy, mention cost when unusually much work is running (more than ~8 concurrent jobs); never block on it.
