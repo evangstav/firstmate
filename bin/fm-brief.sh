@@ -117,7 +117,7 @@ Firstmate then reviews your branch diff, the captain approves, and firstmate mer
 EOF
 )
     ;;
-  *)  # no-mistakes (default): validate locally, then open a PR against main via the forge tool
+  *)  # no-mistakes (default): validate locally, then open a PR against the deployable branch via the forge tool
     SETUP2="
 2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
     RULE1="1. Never push to \`$TARGET\` (the deployable branch) and never merge a PR. Work only on your \`fm/$ID\` branch."
