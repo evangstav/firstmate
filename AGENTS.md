@@ -526,3 +526,13 @@ The store resolves by walking up from the current directory to `.work/`, so runn
 5. **Land = close.** When a ship task reaches `fm-teardown.sh` (PR merged, or local-only merged into local `main`), teardown closes the work item automatically. Scouts are the carve-out: their report is the deliverable, so their issue stays open for the captain to triage or `bin/fm-promote.sh`.
 
 Closed work lives on in the store (`status=done`) plus its PR/merge, so nothing is lost. Dependencies hold across the fleet: an issue stays out of `ready` until every `blocked_by` issue is `done`.
+
+### Assigning to a person (mirror out)
+
+The fmw store is firstmate-internal — a team member can't see it. So when a work item is assigned to a **real person** (not the captain, not a crewmate), it must also land in the project's external tracker, the captain's standing preference (`data/captain.md`):
+
+```sh
+bin/fm-assign.sh <issue-id> <repo-path> <person> [--dry-run]
+```
+
+It sets the fmw assignee and creates a matching item where that person works — **Azure DevOps Boards** for `+ado` projects (`az boards work-item create`, PAT via the `azp` model), **GitHub Issues** for GitHub projects — assigned to them, with the created URL written back to the issue's `external` field. It is **idempotent** (an already-mirrored issue is skipped) and a **no-op for captain-assigned or unassigned** items (they stay local). Identity comes from `people.yaml` (ADO: the netcompany email; GitHub: a `github` alias). `bin/fm-mirror.py <id> <repo-path> [--dry-run]` mirrors the current assignee without changing it — use it to reconcile or preview. If the assignee isn't in `people.yaml`, it warns and skips rather than guessing.
