@@ -69,7 +69,7 @@ The report is the only thing that survives, so anything worth keeping must be in
    FYI progress lines; firstmate reads your pane for that.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions), stop and surface it.
-   For a **design choice** (architecture, approach, tradeoffs among viable options), first lay the options out with \`lavish-axi\` as a reviewable artifact, then append \`needs-decision: {one line + the lavish link}\`. For a simple yes/no, a one-line \`needs-decision: {summary}\` is enough. Firstmate replies with the decision.
+   For a **design choice** (architecture, approach, tradeoffs among viable options), first lay the options out with \`lavish-axi\` as a reviewable artifact — authored in the human-doc visual style (inline \`~/.agents/skills/human-doc/assets/wiki.css\`, follow \`assets/template.html\`: meta bar, TOC, tables, inline SVG, no JS) — then append \`needs-decision: {one line + the lavish link}\`. For a simple yes/no, a one-line \`needs-decision: {summary}\` is enough. Firstmate replies with the decision.
 
 # Definition of done
 Write your findings to \`$FM_ROOT/data/$ID/report.md\`.
@@ -156,7 +156,7 @@ $RULE1
    firstmate reads your pane for that.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions, ask-user findings), stop and surface it.
-   For a **design choice** (architecture, approach, tradeoffs among viable options), first lay the options out with \`lavish-axi\` as a reviewable artifact, then append \`needs-decision: {one line + the lavish link}\`. For a simple yes/no, a one-line \`needs-decision: {summary}\` is enough. Firstmate replies with the decision.
+   For a **design choice** (architecture, approach, tradeoffs among viable options), first lay the options out with \`lavish-axi\` as a reviewable artifact — authored in the human-doc visual style (inline \`~/.agents/skills/human-doc/assets/wiki.css\`, follow \`assets/template.html\`: meta bar, TOC, tables, inline SVG, no JS) — then append \`needs-decision: {one line + the lavish link}\`. For a simple yes/no, a one-line \`needs-decision: {summary}\` is enough. Firstmate replies with the decision.
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
