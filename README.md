@@ -67,6 +67,7 @@ $ claude   # launch your agent harness here; AGENTS.md takes over
 
 ```sh
 # 1. a verified agent harness - claude, codex, opencode, or pi
+#    optional: set config/crew-harness to auto for per-task routing
 # 2. git + GitHub auth
 # 3. tmux - the crew lives in tmux windows (firstmate offers to install it if missing)
 gh auth login
@@ -146,6 +147,7 @@ The first mate drives these; you rarely need to, but they work by hand too.
 | `fm-pr-check.sh`         | Record a PR-ready task and arm the watcher's merge poll                                                             |
 | `fm-promote.sh`          | Promote a scout task in place so it becomes a protected ship task                                                   |
 | `fm-teardown.sh`         | Return the worktree and kill the window; protects ship work, requires scout reports, and reminds backlog refresh    |
+| `fm-route-harness.sh`    | Deterministically choose a concrete crewmate harness when local config is `auto`                                    |
 | `fm-harness.sh`          | Detect the running harness; resolve the effective crewmate harness                                                  |
 | `fm-lock.sh`             | Single-firstmate session lock                                                                                       |
 
@@ -154,6 +156,9 @@ The first mate drives these; you rarely need to, but they work by hand too.
 The shared orchestrator behavior lives in `AGENTS.md` - edit it like any prompt when the fleet is empty, or dispatch shared-repo edits to a crewmate while tasks are in flight.
 Personal preferences for one captain's fleet live locally in `data/captain.md`; it is gitignored and read after `data/projects.md` during bootstrap.
 Harness support is a table in section 4: claude, codex, opencode, and pi are all empirically verified; new harnesses get verified through a supervised trial task before joining the table.
+Set `config/crew-harness` to a concrete adapter (`claude`, `codex`, `opencode`, `pi`) for a fixed local default, `default` to mirror the first mate's harness, or `auto` to route each task by policy.
+Auto routing keeps manual per-task overrides intact: long-context scout/document/report work goes to Claude, code/test/debug/no-mistakes work goes to Codex, low-risk grep-heavy exploration goes to verified OpenCode, and auth/security/destructive/merge-sensitive work goes to Claude.
+OpenCode with DeepSeek is intentionally not a default until that exact provider launch is verified and documented.
 
 Runtime tuning via environment variables (defaults shown):
 

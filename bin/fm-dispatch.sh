@@ -59,6 +59,11 @@ PYEOF
 
 # Record the work-store link and flip the issue to in_progress.
 echo "work=$ID" >> "$FM_ROOT/state/$ID.meta"
-[ -n "$SCOUT" ] || ( cd "$REPO" && "$WORK" update "$ID" --status in_progress >/dev/null 2>&1 || true )
+if [ -z "$SCOUT" ]; then
+  (
+    cd "$REPO" || exit 0
+    "$WORK" update "$ID" --status in_progress >/dev/null 2>&1 || true
+  )
+fi
 
 echo "dispatched work item $ID -> $REPO_NAME"

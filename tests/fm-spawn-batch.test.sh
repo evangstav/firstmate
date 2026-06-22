@@ -78,8 +78,27 @@ test_id_with_slash_is_not_batch() {
   pass "an arg whose id part contains '/' is not treated as a batch pair"
 }
 
+test_auto_router_runs_before_spawn_side_effects() {
+  local id dir repo out status
+  id=auto-route-smoke-z7
+  dir="$ROOT/data/$id"
+  repo="$ROOT"
+  mkdir -p "$dir"
+  printf '%s\n' 'Implement parser bugfix with regression tests.' > "$dir/brief.md"
+  out=$(FM_SPAWN_NO_GUARD=1 FM_SPAWN_DRY_RUN=1 "$SPAWN" "$id" "$repo" auto 2>&1)
+  status=$?
+  rm -rf "$dir"
+  [ "$status" -eq 0 ] || fail "auto-routed dry-run spawn should exit zero, got: $out"
+  printf '%s\n' "$out" | grep -F "dry-run $id harness=codex" >/dev/null \
+    || fail "auto-routed dry-run did not choose codex for code task: $out"
+  printf '%s\n' "$out" | grep -F "harness_reason=code/test task" >/dev/null \
+    || fail "auto-routed dry-run did not report the routing reason: $out"
+  pass "auto router path is available to spawn"
+}
+
 test_batch_dispatches_each_pair
 test_single_pair_is_batch
 test_single_mode_unaffected
 test_batch_rejects_non_pair_argument
 test_id_with_slash_is_not_batch
+test_auto_router_runs_before_spawn_side_effects

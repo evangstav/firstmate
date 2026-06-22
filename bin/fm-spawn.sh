@@ -63,6 +63,10 @@ fi
 ID=${POS[0]}
 PROJ=${POS[1]}
 ARG3=${POS[2]:-}
+BRIEF="$FM_ROOT/data/$ID/brief.md"
+[ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
+PROJ_ABS="$(cd "$PROJ" && pwd)"
+ROUTE_REASON=""
 
 # The verified launch command per adapter. The knowledge half of each adapter
 # (busy signature, exit command, dialogs, quirks) lives in AGENTS.md section 4.
@@ -87,17 +91,38 @@ case "$ARG3" in
     ;;
   '')
     HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
+    if [ "$HARNESS" = auto ]; then
+      IFS=$(printf '\t') read -r HARNESS ROUTE_REASON <<EOF
+$("$FM_ROOT/bin/fm-route-harness.sh" "$ID" "$PROJ_ABS" "$KIND")
+EOF
+    fi
     LAUNCH=$(launch_template "$HARNESS") || { echo "error: no launch template for harness '$HARNESS' (from config/crew-harness or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
   *)
     HARNESS=$ARG3
+    if [ "$HARNESS" = auto ]; then
+      IFS=$(printf '\t') read -r HARNESS ROUTE_REASON <<EOF
+$("$FM_ROOT/bin/fm-route-harness.sh" "$ID" "$PROJ_ABS" "$KIND")
+EOF
+    fi
     LAUNCH=$(launch_template "$HARNESS") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
 
-BRIEF="$FM_ROOT/data/$ID/brief.md"
-[ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
-PROJ_ABS="$(cd "$PROJ" && pwd)"
+# Per-project delivery mode + yolo flag (bin/fm-project-mode.sh; AGENTS.md sections 6-7).
+# Recorded in meta so fm-teardown's safety check and the validate/merge stages can
+# branch on them. Mode governs ship tasks; a scout's deliverable is a report, not a
+# merge, so scout teardown ignores mode.
+PROJ_NAME=$(basename "$PROJ_ABS")
+read -r MODE YOLO <<EOF
+$("$FM_ROOT/bin/fm-project-mode.sh" "$PROJ_NAME")
+EOF
+
+if [ -n "${FM_SPAWN_DRY_RUN:-}" ]; then
+  echo "dry-run $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO"
+  [ -n "$ROUTE_REASON" ] && echo "harness_reason=$ROUTE_REASON"
+  exit 0
+fi
 
 # Same session when firstmate already runs inside tmux; dedicated session otherwise.
 if [ -n "${TMUX:-}" ]; then
@@ -182,21 +207,13 @@ EOF
     ;;
 esac
 
-# Per-project delivery mode + yolo flag (bin/fm-project-mode.sh; AGENTS.md sections 6-7).
-# Recorded in meta so fm-teardown's safety check and the validate/merge stages can
-# branch on them. Mode governs ship tasks; a scout's deliverable is a report, not a
-# merge, so scout teardown ignores mode.
-PROJ_NAME=$(basename "$PROJ_ABS")
-read -r MODE YOLO <<EOF
-$("$FM_ROOT/bin/fm-project-mode.sh" "$PROJ_NAME")
-EOF
-
 mkdir -p "$FM_ROOT/state"
 {
   echo "window=$T"
   echo "worktree=$WT"
   echo "project=$PROJ_ABS"
   echo "harness=$HARNESS"
+  [ -n "$ROUTE_REASON" ] && echo "harness_reason=$ROUTE_REASON"
   echo "kind=$KIND"
   echo "mode=$MODE"
   echo "yolo=$YOLO"

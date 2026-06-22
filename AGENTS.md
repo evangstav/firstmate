@@ -115,19 +115,23 @@ If the captain names a different crewmate harness at bootstrap or later, write i
 ## 4. Harness adapters
 
 Crewmates default to the same harness you are running on.
-The captain may override this at any time, typically at bootstrap: record the choice in `config/crew-harness` (a single word - an adapter name below; the file is local and gitignored, so each machine keeps its own; absent or `default` means mirror your own harness).
+The captain may override this at any time, typically at bootstrap: record the choice in `config/crew-harness` (a single word - an adapter name below, `auto`, or `default`; the file is local and gitignored, so each machine keeps its own; absent or `default` means mirror your own harness).
 The recorded harness is used for every dispatch until changed; a per-task instruction from the captain ("run this one on codex") overrides it for that dispatch only.
 Resolve `default` by detecting your own harness (below).
+Resolve `auto` with `bin/fm-route-harness.sh`: long-context scout/document/report work routes to `claude`, code/test/debug/no-mistakes work routes to `codex`, low-risk grep-heavy exploration routes to verified `opencode`, and sensitive auth/security/destructive/merge work routes to `claude`.
+Every auto-routed spawn records `harness_reason=` in the task meta.
 
 Each adapter splits into mechanics and knowledge.
 The mechanics (launch command, autonomy flag, turn-end hook) live in `bin/fm-spawn.sh`; the knowledge you need while supervising (busy signature, exit, interrupt, dialogs, quirks) lives in the tables below.
 **Never dispatch a crewmate on an unverified adapter.**
 If `config/crew-harness` names an unverified one, tell the captain and fall back to your own harness until it is verified.
 If the captain asks for a new harness, propose verifying it first: spawn a trivial supervised task using fm-spawn's raw-launch-command escape hatch, confirm every fact empirically, then record the mechanics in fm-spawn, the busy signature in fm-watch's `FM_BUSY_REGEX` default, and the knowledge here, and commit.
+Do not route to `opencode` with DeepSeek (or any named model/provider variant) until that exact launch command is verified empirically and documented here.
 
 ### Detecting harnesses
 
 `bin/fm-harness.sh` prints your own harness (verified env markers first, then process ancestry); `bin/fm-harness.sh crew` resolves the effective crewmate harness from `config/crew-harness`.
+When the result is `auto`, `fm-spawn.sh` asks `bin/fm-route-harness.sh` to choose the concrete adapter for that specific task.
 On `unknown`, ask the captain instead of guessing; a captain override always beats detection.
 When you verify a new adapter, record its env marker and command name in that script.
 
@@ -308,6 +312,7 @@ When the task comes from a work item (the normal path), dispatch with `bin/fm-di
 
 ```sh
 bin/fm-spawn.sh <id> projects/<repo>             # uses the active crewmate harness
+bin/fm-spawn.sh <id> projects/<repo> auto        # route this task by policy
 bin/fm-spawn.sh <id> projects/<repo> codex       # per-task harness override
 bin/fm-spawn.sh <id> projects/<repo> --scout     # scout task; records kind=scout in meta
 bin/fm-spawn.sh <id1>=projects/<repo1> <id2>=projects/<repo2> [--scout]   # batch: one call, several tasks
@@ -316,7 +321,7 @@ bin/fm-spawn.sh <id1>=projects/<repo1> <id2>=projects/<repo2> [--scout]   # batc
 Dispatch several tasks in one call by passing `id=repo` pairs instead of a single `<id> <project>`; each pair is spawned through the same single-task path, a shared `--scout` applies to all, and the looping happens inside the script so you never hand-write a multi-task shell loop.
 If one pair fails, the rest still run and the batch exits non-zero.
 
-The script resolves the harness (`fm-harness.sh crew`), owns the verified launch templates, resolves the project's delivery mode (`fm-project-mode.sh`), and records `harness=`, `kind=`, `mode=`, and `yolo=` in the task's meta; a non-flag third argument containing whitespace is treated as a raw launch command (only for verifying new adapters).
+The script resolves the harness (`fm-harness.sh crew`, or `fm-route-harness.sh` when the result or explicit argument is `auto`), owns the verified launch templates, resolves the project's delivery mode (`fm-project-mode.sh`), and records `harness=`, optional `harness_reason=`, `kind=`, `mode=`, and `yolo=` in the task's meta; a non-flag third argument containing whitespace is treated as a raw launch command (only for verifying new adapters).
 
 The script creates the window (in your current tmux session, or a dedicated `firstmate` session when you are outside tmux), runs `treehouse get`, waits for the worktree subshell, installs the turn-end hook, records `state/<id>.meta`, and launches the agent with the brief.
 Worktrees start at detached HEAD on a clean default branch; ship briefs tell the crewmate to create its branch, while scout briefs keep the worktree scratch.
