@@ -34,10 +34,12 @@ REPO=${POS[1]}
 # Forge tool: gh-axi for GitHub projects, ado-axi for Azure DevOps (+ado in the registry).
 FORGE_TOOL=$("$FM_ROOT/bin/fm-forge.sh" tool "$REPO" 2>/dev/null || echo gh-axi)
 FORGE=$("$FM_ROOT/bin/fm-forge.sh" "$REPO" 2>/dev/null || echo github)
-# Pull requests always target main; the create command differs by forge.
+# Target/deployable branch - NOT always main (e.g. the container-app repos deploy from prd).
+TARGET=$("$FM_ROOT/bin/fm-target-branch.sh" "$REPO" 2>/dev/null || echo main)
+# PRs target the project's deployable branch; the create command differs by forge.
 case "$FORGE" in
-  ado) PR_CMD='ado-axi pr create --target main --title "<concise title>" --description "<one-line summary>"' ;;
-  *)   PR_CMD='gh-axi pr create --base main --fill' ;;
+  ado) PR_CMD="ado-axi pr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
+  *)   PR_CMD="gh-axi pr create --base $TARGET --fill" ;;
 esac
 
 BRIEF="$FM_ROOT/data/$ID/brief.md"
@@ -95,7 +97,7 @@ case "$MODE" in
 # Definition of done
 This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a pull request **against main**:
+When it is implemented and committed, push your branch and open a pull request **against \`$TARGET\`**:
     $PR_CMD
 Then append \`done: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The captain reviews and merges the PR; firstmate relays it.
@@ -109,7 +111,7 @@ EOF
 # Definition of done
 This project ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
-Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
+Keep your branch a clean fast-forward onto the current default branch - if it has advanced, rebase onto it so the eventual merge stays a fast-forward.
 When it is implemented and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
 Firstmate then reviews your branch diff, the captain approves, and firstmate merges it into local \`main\`.
 EOF
@@ -118,14 +120,14 @@ EOF
   *)  # no-mistakes (default): validate locally, then open a PR against main via the forge tool
     SETUP2="
 2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
-    RULE1='1. Never push to main and never merge a PR. Work only on your `fm/'"$ID"'` branch.'
+    RULE1="1. Never push to \`$TARGET\` (the deployable branch) and never merge a PR. Work only on your \`fm/$ID\` branch."
     DOD=$(cat <<EOF
 # Definition of done
-Implement on your branch \`fm/$ID\` (off main) and commit only your task's changes.
+Implement on your branch \`fm/$ID\` (off \`$TARGET\`) and commit only your task's changes.
 1. **Validate** with the no-mistakes gate (review, test, document, lint — no push/PR/CI):
    \`no-mistakes axi run --intent "<what the task set out to accomplish, in plain words>" --skip=push,pr,ci --yes\`
    Fix the actionable findings it surfaces on the same branch; for ask-user findings, append \`needs-decision\` and stop (rule 6).
-2. When the gate is green, open a pull request **against main** with the forge tool:
+2. When the gate is green, open a pull request **against \`$TARGET\`** with the forge tool:
    \`$PR_CMD\`
 3. Append \`done: PR {url}\` to the status file and stop. Do NOT merge — the captain reviews and merges; firstmate relays.
 EOF

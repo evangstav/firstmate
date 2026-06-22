@@ -243,9 +243,9 @@ Do not eagerly backfill every project.
 
 **Delivery mode (choose at add).** `<mode>` is how a finished change reaches `main`, picked per project when you add it and recorded in the registry line (`fm-project-mode.sh` parses it; `fm-spawn` records it into each task's meta):
 
-- `no-mistakes` (default; `[...]` may be omitted) - the crewmate validates locally (no-mistakes gate: review/test/document/lint), then opens a PR **against main** with the forge tool (`gh-axi`/`ado-axi`) -> captain merge. Highest assurance.
-- `direct-PR` - open a PR **against main** with the forge tool, no validation gate -> captain merge.
-- `local-only` - local branch, no remote, no PR; firstmate reviews the diff, the captain approves, firstmate merges to local `main` (section 7). For projects with a remote, prefer a PR mode — the captain's standing preference is that landings go through a PR against main.
+- `no-mistakes` (default; `[...]` may be omitted) - the crewmate validates locally (no-mistakes gate: review/test/document/lint), then opens a PR **against its deployable branch** with the forge tool (`gh-axi`/`ado-axi`) -> captain merge. Highest assurance.
+- `direct-PR` - open a PR **against its deployable branch** with the forge tool, no validation gate -> captain merge.
+- `local-only` - local branch, no remote, no PR; firstmate reviews the diff, the captain approves, firstmate merges to local `main` (section 7). For projects with a remote, prefer a PR mode — the captain's standing preference is that landings go through a PR against the project's deployable branch (section 7; resolved by `fm-target-branch.sh`, not always `main`).
 
 Orthogonal to mode is an optional `+yolo` flag (`[direct-PR +yolo]`), default off and **not recommended**: with `yolo` on, firstmate makes the approval decisions itself instead of asking the captain (section 7). When the captain adds a project without saying, default to `no-mistakes` with yolo off; only set a faster mode or `+yolo` on the captain's explicit say-so.
 
@@ -328,8 +328,8 @@ Steer a crewmate only with short single lines via `bin/fm-send.sh`; anything lon
 
 A ship task's path from `done` to landed on `main` is set by the project's `mode` (recorded in meta; section 6); `yolo` decides who approves. The Validate / PR ready / Ship teardown stages below are written for the `no-mistakes` path; the other modes diverge:
 
-- **no-mistakes** - the crewmate validates locally (review/test/document/lint via `no-mistakes axi run --skip=push,pr,ci`, fixing actionable findings on its branch) and then opens a PR **against main** with the forge tool (`gh-axi` / `ado-axi`), reporting `done: PR <url>`. Validation lives in the brief, so firstmate does **not** send `/no-mistakes`; skip straight to PR ready (run `fm-pr-check`, relay the PR). Captain merges.
-- **direct-PR** - no gate. The crewmate opens the PR itself **against main** (its brief says so) and reports `done: PR <url>`. Go straight to PR ready (run `fm-pr-check`, relay the PR). Teardown uses the normal pushed-branch check.
+- **no-mistakes** - the crewmate validates locally (review/test/document/lint via `no-mistakes axi run --skip=push,pr,ci`, fixing actionable findings on its branch) and then opens a PR **against its deployable branch** with the forge tool (`gh-axi` / `ado-axi`), reporting `done: PR <url>`. Validation lives in the brief, so firstmate does **not** send `/no-mistakes`; skip straight to PR ready (run `fm-pr-check`, relay the PR). Captain merges.
+- **direct-PR** - no gate. The crewmate opens the PR itself **against its deployable branch** (its brief says so) and reports `done: PR <url>`. Go straight to PR ready (run `fm-pr-check`, relay the PR). Teardown uses the normal pushed-branch check.
 - **local-only** - no remote, no PR. The crewmate stops at `done: ready in branch fm/<id>`. Review the diff with `bin/fm-review-diff.sh <id>`, relay a one-paragraph summary to the captain, and on approval run `bin/fm-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the crewmate rebase). No `fm-pr-check`. Then teardown, whose safety check requires the branch already merged into local `main`.
 
 When reviewing any crewmate branch diff, use `bin/fm-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
@@ -339,9 +339,9 @@ Pooled clones keep their local default refs frozen at clone time and can lag `or
 
 ### Validate
 
-Validation lives in the crewmate's brief, not a firstmate-issued command. A `no-mistakes`-mode crewmate runs the gate itself — `no-mistakes axi run --intent "<goal>" --skip=push,pr,ci --yes` (review, test, document, lint; no push/PR/CI) — fixes the actionable findings on its branch, and only then opens a PR **against main** with the forge tool, reporting `done: PR <url>`. So for both `no-mistakes` and `direct-PR` tasks you do **not** send `/no-mistakes`; go straight to PR ready below.
+Validation lives in the crewmate's brief, not a firstmate-issued command. A `no-mistakes`-mode crewmate runs the gate itself — `no-mistakes axi run --intent "<goal>" --skip=push,pr,ci --yes` (review, test, document, lint; no push/PR/CI) — fixes the actionable findings on its branch, and only then opens a PR **against its deployable branch** with the forge tool, reporting `done: PR <url>`. So for both `no-mistakes` and `direct-PR` tasks you do **not** send `/no-mistakes`; go straight to PR ready below.
 
-Every project's PR targets `main`, regardless of forge: `gh-axi pr create --base main` on GitHub, `ado-axi pr create --target main` on Azure DevOps. The forge is resolved per project (`fm-forge.sh`, section 6) and baked into the brief.
+Every project's PR targets its **deployable branch**, which is **not always `main`** — `bin/fm-target-branch.sh` resolves it (a `+to:<branch>` registry token, else the repo's default branch / `origin/HEAD`; e.g. the ADMIE container-app repos deploy from `prd`). The crewmate branches off that branch and PRs into it: `gh-axi pr create --base <branch>` on GitHub, `ado-axi pr create --target <branch>` on Azure DevOps. Both the forge (`fm-forge.sh`) and the target branch are baked into the brief.
 
 If a crewmate reports `needs-decision` (an ask-user finding the gate surfaced), relay it to the captain unless `yolo=on` permits routine approval, then send the decision back as one line (the crewmate responds via `no-mistakes axi respond`).
 For a **design choice** (architecture, approach, tradeoffs among viable options) — whether it surfaces from a crewmate or you raise it yourself — present it to the captain via `lavish-axi`, not plain chat (section 9). Plain chat is for trivial yes/no only.
@@ -495,7 +495,7 @@ Every finished PR-based ship task lives on as its GitHub PR, every local-only sh
 ## 11. Crewmate briefs
 
 Scaffold with `bin/fm-brief.sh <id> <repo-name>` - it writes `data/<id>/brief.md` with the standard contract (branch setup, status-reporting protocol, push/merge rules, definition of done) and all paths filled in.
-For a ship task the definition of done is shaped by the project's delivery mode (section 6): `no-mistakes` has the crewmate validate locally with the no-mistakes gate then open a PR against main with the forge tool, `direct-PR` has it open the PR against main (forge tool) without the gate, `local-only` has it stop at "ready in branch" for firstmate to review and merge locally.
+For a ship task the definition of done is shaped by the project's delivery mode (section 6): `no-mistakes` has the crewmate validate locally with the no-mistakes gate then open a PR against the deployable branch with the forge tool, `direct-PR` has it open the PR against the deployable branch (forge tool) without the gate, `local-only` has it stop at "ready in branch" for firstmate to review and merge locally. The deployable branch is per project (`fm-target-branch.sh`), not always `main`.
 The scaffold reads the mode via `fm-project-mode.sh`, so you do not pass it.
 Ship briefs also include the project-memory contract: run `bin/fm-ensure-agents-md.sh` when the project already has agent-memory files or when the task produced durable project-intrinsic knowledge, then record proportionate learnings in `AGENTS.md`.
 For scout tasks add `--scout`: the scaffold swaps the definition of done for the report contract (findings to `data/<id>/report.md`, no branch, no push, no PR) and declares the worktree scratch; scout is mode-agnostic.
