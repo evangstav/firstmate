@@ -266,6 +266,8 @@ Also orthogonal is the **forge** — where the project's pull requests live. Def
 
 **Clone existing:** by default, `git clone <url> projects/<name>`, add its registry line with the chosen mode, then initialize only if the mode is `no-mistakes`.
 If the repo already lives in a canonical workspace outside firstmate, do not reclone it just to satisfy layout; register it as referenced in place and pass that path to dispatch/spawn.
+Until the dispatch/spawn tools resolve policy by recorded path, the registry name for a referenced-in-place checkout must match the checkout directory's basename exactly.
+If the logical fleet name differs from the folder name, either rename the registry entry to the basename or change the tools before dispatching; otherwise delivery mode, forge, target branch, or skip tokens can silently fall back to defaults.
 For forked repos, `origin` must be the repo firstmate pushes to and opens PRs from.
 If there is an upstream template or source repo, name it `upstream`, not `origin`.
 Treehouse tracks `origin` when it creates worktrees, so reversed remotes can silently base work on stale upstream commits.
