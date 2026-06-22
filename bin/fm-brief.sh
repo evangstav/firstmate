@@ -36,6 +36,12 @@ FORGE_TOOL=$("$FM_ROOT/bin/fm-forge.sh" tool "$REPO" 2>/dev/null || echo gh-axi)
 FORGE=$("$FM_ROOT/bin/fm-forge.sh" "$REPO" 2>/dev/null || echo github)
 # Target/deployable branch - NOT always main (e.g. the container-app repos deploy from prd).
 TARGET=$("$FM_ROOT/bin/fm-target-branch.sh" "$REPO" 2>/dev/null || echo main)
+# no-mistakes steps to skip: always the upstream steps (we PR via the forge tool, not no-mistakes);
+# plus any per-repo extras from a `+skip:<steps>` registry token (e.g. `+skip:test` for a repo
+# with no test suite, so its gate runs review/document/lint without a failing test step).
+NM_SKIP="push,pr,ci"
+NM_EXTRA=$(awk -v n="$REPO" '$1=="-" && $2==n { for(i=3;i<=NF;i++) if($i ~ /^\+skip:/){t=$i; sub(/^\+skip:/,"",t); sub(/]$/,"",t); print t; exit} }' "$FM_ROOT/data/projects.md" 2>/dev/null || true)
+[ -n "$NM_EXTRA" ] && NM_SKIP="$NM_SKIP,$NM_EXTRA"
 # PRs target the project's deployable branch; the create command differs by forge.
 case "$FORGE" in
   ado) PR_CMD="ado-axi pr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
@@ -125,7 +131,7 @@ EOF
 # Definition of done
 Implement on your branch \`fm/$ID\` (off \`$TARGET\`) and commit only your task's changes.
 1. **Validate** with the no-mistakes gate (review, test, document, lint — no push/PR/CI):
-   \`no-mistakes axi run --intent "<what the task set out to accomplish, in plain words>" --skip=push,pr,ci --yes\`
+   \`no-mistakes axi run --intent "<what the task set out to accomplish, in plain words>" --skip=$NM_SKIP --yes\`
    Fix the actionable findings it surfaces on the same branch; for ask-user findings, append \`needs-decision\` and stop (rule 6).
 2. When the gate is green, open a pull request **against \`$TARGET\`** with the forge tool:
    \`$PR_CMD\`
