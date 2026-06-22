@@ -70,12 +70,22 @@ def find_person(people, pid):
     return None
 
 
-def ado_email(p):
-    emails = (p.get("aliases", {}) or {}).get("git_emails") or []
-    for e in emails:
-        if "netcompany.com" in e.lower():
-            return e
-    return emails[0] if emails else None
+def ado_candidates(p):
+    """Identity values to try for ADO --assigned-to, best first. Client ADO orgs (e.g. IPTO)
+    are picky and use client-tenant accounts that may differ from the Netcompany email, and
+    the exact email casing / display-name ordering matters — so try each until one resolves,
+    then fall back to unassigned. Add an explicit `ado:` alias in people.yaml to pin it."""
+    al = p.get("aliases", {}) or {}
+    out = list(al.get("ado") or [])
+    out += list(al.get("git_emails") or [])
+    if p.get("name"):
+        out.append(p["name"])
+    seen, uniq = set(), []
+    for c in out:
+        if c and c not in seen:
+            seen.add(c)
+            uniq.append(c)
+    return uniq
 
 
 def github_handle(p):
@@ -120,6 +130,8 @@ def main():
     ap.add_argument("issue_id")
     ap.add_argument("repo_path")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="mirror even a captain-assigned item (captain.md's 'unless asked' exception)")
     ap.add_argument("--type", default="Task", help="ADO work-item type (default Task)")
     args = ap.parse_args()
 
@@ -143,8 +155,8 @@ def main():
     if not assignee:
         print(f"{args.issue_id}: no assignee — nothing to mirror")
         return
-    if assignee == cap:
-        print(f"{args.issue_id}: assigned to the captain ({cap}) — stays local")
+    if assignee == cap and not args.force:
+        print(f"{args.issue_id}: assigned to the captain ({cap}) — stays local (use --force to mirror anyway)")
         return
     person = find_person(people, assignee)
     if person is None:
@@ -162,26 +174,40 @@ def main():
     url = None
     if forge == "ado":
         org_url, org, project = ado_org_project(repo)
-        email = ado_email(person)
-        cmd = ["az", "boards", "work-item", "create", "--type", args.type,
-               "--title", title, "--org", org_url, "--project", project, "-o", "json"]
-        if email:
-            cmd += ["--assigned-to", email]
-        else:
-            print(f"fm-mirror: no email for {assignee} in people.yaml — creating unassigned", file=sys.stderr)
-        cmd += ["--description", body]
+        candidates = ado_candidates(person)
+        base = ["az", "boards", "work-item", "create", "--type", args.type,
+                "--title", title, "--org", org_url, "--project", project,
+                "--description", body, "-o", "json"]
         if args.dry_run:
-            print(f"DRY-RUN [ado] would create in {org}/{project}, assigned-to={email}:")
-            print("  " + " ".join(f'"{c}"' if " " in c else c for c in cmd))
+            print(f"DRY-RUN [ado] would create in {org}/{project}; try assignee {candidates or '<unassigned>'}:")
+            print("  " + " ".join(f'"{c}"' if " " in c else c for c in base))
             return
         pat = read_pat(org_url)
         if not pat:
             die(f"no PAT in git credential helper for {org_url}")
-        r = sh(cmd, env=dict(os.environ, AZURE_DEVOPS_EXT_PAT=pat))
-        if r.returncode != 0:
-            die(f"az boards create failed: {r.stderr.strip()[:300]}")
+        env = dict(os.environ, AZURE_DEVOPS_EXT_PAT=pat)
+        # Try each identity candidate until ADO accepts one (a rejected --assigned-to fails the
+        # create without making anything, so retrying is safe); fall back to unassigned.
+        r, assigned = None, None
+        for ident in candidates:
+            r = sh(base + ["--assigned-to", ident], env=env)
+            if r.returncode == 0:
+                assigned = ident
+                break
+            if not re.search(r"unknown identity|Assigned To", r.stderr or ""):
+                die(f"az boards create failed: {r.stderr.strip()[:300]}")  # a real error, not identity
+        if assigned is None:
+            if candidates:
+                print(f"fm-mirror: ADO recognized none of {candidates} in {org} — creating unassigned; "
+                      f"set the assignee in ADO or add an `ado:` alias to people.yaml", file=sys.stderr)
+            r = sh(base, env=env)
+            if r.returncode != 0:
+                die(f"az boards create failed: {r.stderr.strip()[:300]}")
+        assert r is not None  # set by the candidate loop or the unassigned fallback above
         wid = json.loads(r.stdout).get("id")
         url = f"{org_url}/{project}/_workitems/edit/{wid}"
+        if assigned:
+            print(f"  (assigned in ADO to: {assigned})")
     else:  # github
         ownerrepo = gh_owner_repo(repo)
         if not ownerrepo:
