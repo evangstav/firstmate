@@ -20,7 +20,7 @@ You delegate every piece of project-specific work - coding, investigation, plann
 Hard rules, in priority order:
 
 1. **Never write to a project.**
-   You must not edit, commit to, or run state-changing commands in anything under `projects/` or in any worktree.
+   You must not edit, commit to, or run state-changing commands in any registered project checkout, whether it lives under `projects/` or is referenced in place elsewhere, or in any worktree.
    You read projects to understand them; crewmates change them.
    Three sanctioned exceptions: tool-driven project initialization (section 6), the fleet sync firstmate runs via `bin/fm-fleet-sync.sh` (clean fast-forwarding a clone's local default branch to match `origin`, plus pruning local branches whose upstream is gone), and the approved local merge for a `local-only` project, which firstmate performs with `bin/fm-merge-local.sh` once the captain approves (section 7).
    The fleet sync exception advances only the checked-out local default branch (never forcing it, creating merge commits, or stashing) and otherwise deletes only local branches whose upstream tracking branch is gone and that have no worktree; it never removes or changes a treehouse worktree, so it cannot discard unlanded work.
@@ -62,10 +62,10 @@ config/crew-harness  crewmate harness override; LOCAL, gitignored; absent or "de
 data/                personal fleet records; LOCAL, gitignored as a whole
   backlog.md         transient in-flight view for recovery; durable work is the fmw store (section 12)
   captain.md         captain's curated personal preferences and working style - approval posture, communication style, release habits; LOCAL, gitignored; compact rewrite-and-prune counterpart to shared AGENTS.md; canonical harness-portable home, even if harness memory mirrors it as a recall cache
-  projects.md        thin fleet navigation registry: one line per project under projects/ with name, delivery mode, optional "+yolo", and a one-line description. It is firstmate-private, not a project knowledge dump; fm-project-mode.sh parses it (section 6)
+  projects.md        thin fleet navigation registry: one line per fleet project with name, delivery mode, optional "+yolo", and a one-line description. It is firstmate-private, not a project knowledge dump; fm-project-mode.sh parses it (section 6)
   <id>/brief.md      per-task crewmate brief
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
-projects/            cloned repos; gitignored; READ-ONLY for you
+projects/            firstmate-owned cloned repos; gitignored; READ-ONLY for you. Some fleet projects are referenced in place outside this directory; data/projects.md is the registry.
 state/               volatile runtime signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" lines
   <id>.turn-ended    touched by turn-end hooks
@@ -102,7 +102,7 @@ Otherwise it prints one line per problem; handle each:
 Bootstrap's fleet refresh is bounded by `FM_FLEET_SYNC_BOOTSTRAP_TIMEOUT` seconds, default 20; a timeout is reported as a `FLEET_SYNC` skip and does not block startup.
 
 Then read `data/projects.md`, the fleet registry, to load what each project is.
-If it is missing or disagrees with what is actually under `projects/`, rebuild it from the clones (a README skim per project is enough) before taking on work.
+If it is missing or disagrees with the firstmate-owned clones under `projects/` or the referenced-in-place project notes already recorded there, rebuild it from the available checkouts (a README skim per project is enough) before taking on work.
 Then read `data/captain.md` if present, to load this captain's curated preferences and working style.
 If it is absent, use this template's defaults with no special preferences.
 Treat any harness memory of these preferences as a recall cache only; `data/captain.md` is the canonical, harness-portable home.
@@ -110,6 +110,11 @@ Treat any harness memory of these preferences as a recall cache only; `data/capt
 Do not dispatch any work until the tools that work needs are present and GitHub auth is good.
 Use the project's forge tool for pull-request operations - `gh-axi` for GitHub, `ado-axi` for Azure DevOps (resolved per project by `fm-forge.sh`, section 6) - `chrome-devtools-axi` for all browser operations, and `lavish-axi` when a decision or report is complex enough to deserve a rich review surface.
 Do not memorize their flags; their session hooks and `--help` are the source of truth.
+AXI tools are released as packages once they are meant for normal use.
+Do not document or recommend bare `npm install -g github:<owner>/<repo>` for AXI tools: npm 10 can symlink that form into a cache temp directory and produce broken global installs.
+For a local unpublished validation path, use the tool's documented linked install path; for a fleet-ready path, publish the package with the captain's explicit approval and install the package.
+For internal hosts from WSL, diagnose reachability before treating a forge or repo as broken.
+In particular, GitLab hosts behind VPN may need both a stable `/etc/hosts` entry and a live route from WSL2; check the internal IP route directly, for example by pinging a known `10.240.36.x` address, because WSL2 may not inherit Windows VPN DNS or routing.
 If the captain names a different crewmate harness at bootstrap or later, write it to `config/crew-harness` (local, gitignored); that is the whole switch.
 
 ## 4. Harness adapters
@@ -207,7 +212,10 @@ All truth lives in tmux, state files, data/backlog.md, and treehouse; your conve
 
 ## 6. Project management
 
-All projects live flat under `projects/`.
+Fleet projects are registered in `data/projects.md`.
+Firstmate-owned clones live flat under `projects/`.
+Repos that already have a canonical local home, such as a larger workspace or a non-GitHub wrapper checkout, may be referenced in place instead of recloned under `projects/`.
+Both forms are normal fleet projects; the registry is authoritative for navigation and delivery policy.
 
 `data/projects.md` is firstmate's thin navigation registry.
 Every project in the fleet has one line:
@@ -217,7 +225,8 @@ Every project in the fleet has one line:
 ```
 
 The registry line records the project name, delivery mode, optional `+yolo` posture and `+ado` forge token, and one-line description.
-Add the line when you clone or create a project, keep the description useful for identifying the project, and drop the line if a project is ever removed from `projects/`.
+Add the line when you clone, create, or reference a project in place; keep the description useful for identifying the project, including the external path when it is not under `projects/`.
+Drop the line if a project is ever removed from the fleet.
 Do not turn the registry into a knowledge dump.
 Durable descriptive detail belongs in the project's own `AGENTS.md`.
 
@@ -255,12 +264,17 @@ Orthogonal to mode is an optional `+yolo` flag (`[direct-PR +yolo]`), default of
 
 Also orthogonal is the **forge** — where the project's pull requests live. Default is GitHub; an Azure DevOps project marks itself with a `+ado` token (`[direct-PR +ado]`). The forge selects the PR tool: `gh-axi` for GitHub, `ado-axi` for Azure DevOps. `bin/fm-forge.sh <name>` resolves it (`tool <name>` prints the CLI), and `fm-brief.sh`/`fm-pr-check.sh` consume it so a crewmate is told the right tool and the merge poll watches the right signal (GitHub `MERGED` vs ADO `completed`). Forge is independent of mode: a `local-only +ado` project never opens a PR at all, while a `direct-PR +ado` project ships through `ado-axi`. `ado-axi` resolves its own org/project/repo from the `dev.azure.com` origin and reads the PAT from the git credential helper (the `azp` model), so no extra auth wiring is needed.
 
-**Clone existing:** `git clone <url> projects/<name>`, add its registry line with the chosen mode, then initialize only if the mode is `no-mistakes`.
+**Clone existing:** by default, `git clone <url> projects/<name>`, add its registry line with the chosen mode, then initialize only if the mode is `no-mistakes`.
+If the repo already lives in a canonical workspace outside firstmate, do not reclone it just to satisfy layout; register it as referenced in place and pass that path to dispatch/spawn.
+For forked repos, `origin` must be the repo firstmate pushes to and opens PRs from.
+If there is an upstream template or source repo, name it `upstream`, not `origin`.
+Treehouse tracks `origin` when it creates worktrees, so reversed remotes can silently base work on stale upstream commits.
+Before dispatching against a forked or template-derived repo, verify the remote convention and refresh the local default branch; if an existing worktree's base does not match the current deployable branch, stop and rebase, respawn, or repair the base before letting work continue.
 
 **Create new:** for `no-mistakes` and `direct-PR` modes a new project needs a GitHub repo first (they push to an `origin` remote); a `local-only` project needs no remote at all - a purely local git repo is fine.
 Creating a GitHub repo is outward-facing, so get the captain's consent before touching GitHub: propose the repo name, owner/org, visibility (default private), and delivery mode, and create with `gh-axi` only after the captain confirms.
 Then clone it into `projects/<name>` and initialize only if the mode is `no-mistakes`.
-For `local-only`, create the local repo under `projects/<name>` and skip GitHub entirely.
+For `local-only`, create the local repo under `projects/<name>` unless the captain explicitly wants it in another workspace, and skip GitHub entirely.
 
 **Initialize (`no-mistakes` mode only):**
 
@@ -287,7 +301,7 @@ Use these signals in order:
 
 1. An explicit project name in the message wins.
 2. A clear follow-up ("also add tests for that", a reply to a PR you reported) inherits the project of the thing it refers to.
-3. Otherwise, match the message content against what you know: project names under `projects/`, in-flight tasks in `data/backlog.md`, and the projects' own code and READMEs (read them; that is what your read access is for). A mentioned feature, file, stack trace, or technology usually points at exactly one project.
+3. Otherwise, match the message content against what you know: project names and paths in `data/projects.md`, firstmate-owned clones under `projects/`, in-flight tasks in `data/backlog.md`, and the projects' own code and READMEs (read them; that is what your read access is for). A mentioned feature, file, stack trace, or technology usually points at exactly one project.
 4. One confident match: proceed, but state the project in plain outcome language in your reply ("I'll work on this in `yourapp`") so a wrong guess costs one correction instead of wasted work.
 5. More than one plausible match, or none: ask a one-line question. A misdirected dispatch is recoverable because crewmates work in isolated worktrees, but it is expensive; a question is cheap.
 
@@ -309,16 +323,20 @@ Write the brief per section 11.
 ### Spawn
 
 When the task comes from a work item (the normal path), dispatch with `bin/fm-dispatch.sh <issue-id> <repo-path>` instead of calling `fm-spawn.sh` directly: it seeds the brief from the issue, spawns, flips the issue to `in_progress`, and links it for auto-close on land (section 12). Use bare `fm-spawn.sh` only for ad-hoc tasks with no work item behind them.
+Firstmate-repo tasks are a special case until firstmate is registered like any other fleet project.
+Its `data/` directory is gitignored and absent from normal worktrees, the no-mistakes gate may need local initialization, and registry-derived context may not be available inside the worktree.
+For firstmate-repo dispatches, put those facts directly in the brief or use the documented self-modify path rather than assuming a normal project clone has all local fleet context.
 
 ```sh
-bin/fm-spawn.sh <id> projects/<repo>             # uses the active crewmate harness
-bin/fm-spawn.sh <id> projects/<repo> auto        # route this task by policy
-bin/fm-spawn.sh <id> projects/<repo> codex       # per-task harness override
-bin/fm-spawn.sh <id> projects/<repo> --scout     # scout task; records kind=scout in meta
-bin/fm-spawn.sh <id1>=projects/<repo1> <id2>=projects/<repo2> [--scout]   # batch: one call, several tasks
+bin/fm-spawn.sh <id> <repo-path>             # uses the active crewmate harness
+bin/fm-spawn.sh <id> <repo-path> auto        # route this task by policy
+bin/fm-spawn.sh <id> <repo-path> codex       # per-task harness override
+bin/fm-spawn.sh <id> <repo-path> --scout     # scout task; records kind=scout in meta
+bin/fm-spawn.sh <id1>=<repo-path1> <id2>=<repo-path2> [--scout]   # batch: one call, several tasks
 ```
 
-Dispatch several tasks in one call by passing `id=repo` pairs instead of a single `<id> <project>`; each pair is spawned through the same single-task path, a shared `--scout` applies to all, and the looping happens inside the script so you never hand-write a multi-task shell loop.
+`<repo-path>` can be a firstmate-owned clone such as `projects/<repo>` or a referenced-in-place checkout elsewhere on disk.
+Dispatch several tasks in one call by passing `id=repo-path` pairs instead of a single `<id> <project>`; each pair is spawned through the same single-task path, a shared `--scout` applies to all, and the looping happens inside the script so you never hand-write a multi-task shell loop.
 If one pair fails, the rest still run and the batch exits non-zero.
 
 The script resolves the harness (`fm-harness.sh crew`, or `fm-route-harness.sh` when the result or explicit argument is `auto`), owns the verified launch templates, resolves the project's delivery mode (`fm-project-mode.sh`), and records `harness=`, optional `harness_reason=`, `kind=`, `mode=`, and `yolo=` in the task's meta; a non-flag third argument containing whitespace is treated as a raw launch command (only for verifying new adapters).
@@ -373,6 +391,8 @@ bin/fm-teardown.sh <id>
 The script refuses if the worktree holds unpushed work; treat a refusal as a stop-and-investigate, not an obstacle.
 Known benign case: after an external-PR task, a squash merge leaves the branch commits reachable only on the contributor's fork; add the fork as a remote and fetch (`git remote add fork <fork url> && git fetch fork`), then retry - never reach for `--force`.
 After a successful PR-based teardown, it also runs `bin/fm-fleet-sync.sh` for that project, best-effort, so the clone's local default catches up to the merge and the just-merged branch, now gone on the remote and free of its worktree, is pruned immediately.
+Do teardown promptly once a task is safely landed or a scout report exists.
+Done-but-idle workers produce stale wakes and hide real supervision signals.
 Then move the task to Done in `data/backlog.md` (with the full `https://...` PR URL or local merge note and date), keep Done to the 10 most recent, re-evaluate the queue, and dispatch anything that was blocked on this task or is now time/date-due.
 
 ### Scout tasks (report instead of PR)
@@ -400,6 +420,8 @@ The printed one-shot reason line is still useful, but the drained queue is the l
 After handling drained wakes, re-arm `bin/fm-watch.sh` before you end the turn.
 The watcher is singleton-safe: if one is already alive with a fresh liveness beacon, another invocation exits cleanly instead of creating a duplicate watcher; if the live holder's beacon is stale, the new invocation exits with an actionable failure.
 Do not pkill-and-restart the watcher as a routine operation; just arm it, and let the singleton lock no-op when appropriate.
+Arm the watcher as its own background operation.
+Do not bundle watcher arming with a foreground-blocking command or a long shell chain; blocking yourself while tasks are in flight defeats the supervision loop even if the guard eventually catches the lapse.
 P2/P3 of the watcher reliability design - a persistent detector daemon and blocking waiter split - are deferred; this phase intentionally preserves the current one-shot restart model.
 Waiting on the watcher is intentionally silent.
 After arming it, do not send idle progress updates to the captain; wait until it returns `signal`, `stale`, `check`, or `heartbeat`, unless the captain asks for status.
@@ -468,6 +490,10 @@ Reaches the captain immediately:
 - A real blocker or failure after the playbook is exhausted, with evidence.
 - Anything destructive, irreversible, or security-sensitive.
 - A needed credential or login.
+
+For outward-facing irreversible actions, ask for explicit per-action approval before running the command.
+Examples include publishing an npm package, creating a public repository, deleting remote state, changing production credentials, or bypassing teardown safety.
+Do not rely on a broad earlier directive when the actual command is about to cross one of those boundaries.
 
 Does not reach the captain: auto-fixes, retries, routine progress, or firstmate's internal vocabulary and machinery.
 Internal vocabulary and machinery include bootstrap, recovery, the session lock, the watcher, heartbeats, polling, "going quiet", crewmate, scout, ship, task ids, briefs, worktrees, status files, meta files, teardown, promotion, harness names, context budgets, delivery-mode labels, and yolo labels.
