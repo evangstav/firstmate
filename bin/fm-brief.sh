@@ -31,7 +31,7 @@ done
 ID=${POS[0]}
 REPO=${POS[1]}
 
-# Forge tool: gh-axi for GitHub projects, ado-axi for Azure DevOps (+ado in the registry).
+# Forge tool: gh-axi for GitHub projects, ado-axi for Azure DevOps (+ado), gl-axi for GitLab (+gitlab).
 FORGE_TOOL=$("$FM_ROOT/bin/fm-forge.sh" tool "$REPO" 2>/dev/null || echo gh-axi)
 FORGE=$("$FM_ROOT/bin/fm-forge.sh" "$REPO" 2>/dev/null || echo github)
 # Target/deployable branch - NOT always main (e.g. the container-app repos deploy from prd).
@@ -44,8 +44,9 @@ NM_EXTRA=$(awk -v n="$REPO" '$1=="-" && $2==n { for(i=3;i<=NF;i++) if($i ~ /^\+s
 [ -n "$NM_EXTRA" ] && NM_SKIP="$NM_SKIP,$NM_EXTRA"
 # PRs target the project's deployable branch; the create command differs by forge.
 case "$FORGE" in
-  ado) PR_CMD="ado-axi pr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
-  *)   PR_CMD="gh-axi pr create --base $TARGET --fill" ;;
+  ado)    PR_CMD="ado-axi pr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
+  gitlab) PR_CMD="gl-axi mr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
+  *)      PR_CMD="gh-axi pr create --base $TARGET --fill" ;;
 esac
 
 BRIEF="$FM_ROOT/data/$ID/brief.md"
