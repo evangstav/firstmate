@@ -31,6 +31,23 @@ done
 ID=${POS[0]}
 REPO=${POS[1]}
 
+# Forge tool: gh-axi for GitHub projects, ado-axi for Azure DevOps (+ado in the registry).
+FORGE_TOOL=$("$FM_ROOT/bin/fm-forge.sh" tool "$REPO" 2>/dev/null || echo gh-axi)
+FORGE=$("$FM_ROOT/bin/fm-forge.sh" "$REPO" 2>/dev/null || echo github)
+# Target/deployable branch - NOT always main (e.g. the container-app repos deploy from prd).
+TARGET=$("$FM_ROOT/bin/fm-target-branch.sh" "$REPO" 2>/dev/null || echo main)
+# no-mistakes steps to skip: always the upstream steps (we PR via the forge tool, not no-mistakes);
+# plus any per-repo extras from a `+skip:<steps>` registry token (e.g. `+skip:test` for a repo
+# with no test suite, so its gate runs review/document/lint without a failing test step).
+NM_SKIP="push,pr,ci"
+NM_EXTRA=$(awk -v n="$REPO" '$1=="-" && $2==n { for(i=3;i<=NF;i++) if($i ~ /^\+skip:/){t=$i; sub(/^\+skip:/,"",t); sub(/]$/,"",t); print t; exit} }' "$FM_ROOT/data/projects.md" 2>/dev/null || true)
+[ -n "$NM_EXTRA" ] && NM_SKIP="$NM_SKIP,$NM_EXTRA"
+# PRs target the project's deployable branch; the create command differs by forge.
+case "$FORGE" in
+  ado) PR_CMD="ado-axi pr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
+  *)   PR_CMD="gh-axi pr create --base $TARGET --fill" ;;
+esac
+
 BRIEF="$FM_ROOT/data/$ID/brief.md"
 [ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
 mkdir -p "$FM_ROOT/data/$ID"
@@ -51,7 +68,7 @@ The report is the only thing that survives, so anything worth keeping must be in
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+3. Use $FORGE_TOOL for pull-request / forge operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $FM_ROOT/state/$ID.status\`
    States: working, needs-decision, blocked, done, failed.
@@ -59,8 +76,8 @@ The report is the only thing that survives, so anything worth keeping must be in
    would act on and the needs-decision/blocked/done/failed states. No step-by-step
    FYI progress lines; firstmate reads your pane for that.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
-6. If a decision belongs to a human (product choices, destructive actions),
-   append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+6. If a decision belongs to a human (product choices, destructive actions), stop and surface it.
+   For a **design choice** (architecture, approach, tradeoffs among viable options), first lay the options out with \`lavish-axi\` as a reviewable artifact — authored in the human-doc visual style (inline \`~/.agents/skills/human-doc/assets/wiki.css\`, follow \`assets/template.html\`: meta bar, TOC, tables, inline SVG, no JS) — then append \`needs-decision: {one line + the lavish link}\`. For a simple yes/no, a one-line \`needs-decision: {summary}\` is enough. Firstmate replies with the decision.
 
 # Definition of done
 Write your findings to \`$FM_ROOT/data/$ID/report.md\`.
@@ -86,7 +103,9 @@ case "$MODE" in
 # Definition of done
 This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+When it is implemented and committed, push your branch and open a pull request **against \`$TARGET\`**:
+    $PR_CMD
+Then append \`done: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The captain reviews and merges the PR; firstmate relays it.
 EOF
 )
@@ -98,23 +117,25 @@ EOF
 # Definition of done
 This project ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
-Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
+Keep your branch a clean fast-forward onto the current default branch - if it has advanced, rebase onto it so the eventual merge stays a fast-forward.
 When it is implemented and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
 Firstmate then reviews your branch diff, the captain approves, and firstmate merges it into local \`main\`.
 EOF
 )
     ;;
-  *)  # no-mistakes (default)
+  *)  # no-mistakes (default): validate locally, then open a PR against the deployable branch via the forge tool
     SETUP2="
 2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
-    RULE1='1. Never push to the default branch. Never merge a PR.'
+    RULE1="1. Never push to \`$TARGET\` (the deployable branch) and never merge a PR. Work only on your \`fm/$ID\` branch."
     DOD=$(cat <<EOF
 # Definition of done
-The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
-During validation, fix auto-fix findings yourself; escalate ask-user findings per rule 6.
-After /no-mistakes reports CI green, append \`done: PR {url} checks green\` and stop. You are finished.
+Implement on your branch \`fm/$ID\` (off \`$TARGET\`) and commit only your task's changes.
+1. **Validate** with the no-mistakes gate (review, test, document, lint — no push/PR/CI):
+   \`no-mistakes axi run --intent "<what the task set out to accomplish, in plain words>" --skip=$NM_SKIP --yes\`
+   Fix the actionable findings it surfaces on the same branch; for ask-user findings, append \`needs-decision\` and stop (rule 6).
+2. When the gate is green, open a pull request **against \`$TARGET\`** with the forge tool:
+   \`$PR_CMD\`
+3. Append \`done: PR {url}\` to the status file and stop. Do NOT merge — the captain reviews and merges; firstmate relays.
 EOF
 )
     ;;
@@ -133,7 +154,7 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 # Rules
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+3. Use $FORGE_TOOL for pull-request / forge operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $FM_ROOT/state/$ID.status\`
    States: working, needs-decision, blocked, done, failed.
@@ -142,8 +163,8 @@ $RULE1
    needs-decision/blocked/done/failed states. No step-by-step FYI progress lines;
    firstmate reads your pane for that.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
-6. If a decision belongs to a human (product choices, destructive actions, ask-user findings),
-   append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+6. If a decision belongs to a human (product choices, destructive actions, ask-user findings), stop and surface it.
+   For a **design choice** (architecture, approach, tradeoffs among viable options), first lay the options out with \`lavish-axi\` as a reviewable artifact — authored in the human-doc visual style (inline \`~/.agents/skills/human-doc/assets/wiki.css\`, follow \`assets/template.html\`: meta bar, TOC, tables, inline SVG, no JS) — then append \`needs-decision: {one line + the lavish link}\`. For a simple yes/no, a one-line \`needs-decision: {summary}\` is enough. Firstmate replies with the decision.
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.

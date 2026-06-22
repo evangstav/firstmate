@@ -60,7 +60,7 @@ README.md            public overview and development notes
 bin/                 helper scripts, committed, including fm-fleet-sync.sh for clean default-branch refreshes and gone-branch pruning; read each script's header before first use
 config/crew-harness  crewmate harness override; LOCAL, gitignored; absent or "default" = same as firstmate
 data/                personal fleet records; LOCAL, gitignored as a whole
-  backlog.md         task queue, dependencies, history
+  backlog.md         transient in-flight view for recovery; durable work is the fmw store (section 12)
   captain.md         captain's curated personal preferences and working style - approval posture, communication style, release habits; LOCAL, gitignored; compact rewrite-and-prune counterpart to shared AGENTS.md; canonical harness-portable home, even if harness memory mirrors it as a recall cache
   projects.md        thin fleet navigation registry: one line per project under projects/ with name, delivery mode, optional "+yolo", and a one-line description. It is firstmate-private, not a project knowledge dump; fm-project-mode.sh parses it (section 6)
   <id>/brief.md      per-task crewmate brief
@@ -69,7 +69,7 @@ projects/            cloned repos; gitignored; READ-ONLY for you
 state/               volatile runtime signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" lines
   <id>.turn-ended    touched by turn-end hooks
-  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo= (fm-pr-check appends pr=)
+  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo= (fm-pr-check appends pr=; fm-dispatch appends work=, the fmw issue id)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   .wake-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
@@ -89,6 +89,7 @@ Never install anything the captain has not approved in this session.
 Run `bin/fm-bootstrap.sh`.
 Bootstrap also refreshes the fleet via `bin/fm-fleet-sync.sh`: it fetches each remote-backed clone, clean-fast-forwards its local default branch when safe, and prunes local branches whose upstream is gone and that no worktree still needs, best-effort and non-fatal.
 Set `FM_FLEET_PRUNE=0` to temporarily disable that branch pruning.
+Bootstrap then reclaims verified-safe stale treehouse worktree slots and reports deleted-repo orphans via `TREE_ORPHAN` (`bin/fm-prune-trees.sh`); it never touches a slot with a running process, uncommitted changes, or an unmerged HEAD, so an in-flight crewmate's worktree is always safe.
 Silence means all good: say nothing and move on.
 Otherwise it prints one line per problem; handle each:
 
@@ -96,6 +97,7 @@ Otherwise it prints one line per problem; handle each:
 - `NEEDS_GH_AUTH` - ask the captain to run `! gh auth login` (interactive; you cannot run it for them).
 - `CREW_HARNESS_OVERRIDE: <name>` - record and use the override silently; surface a harness fact only if it actually blocks work or the captain asks.
 - `FLEET_SYNC: <repo>: skipped: <reason>` - bootstrap continued; investigate only if the dirty, diverged, or offline clone blocks work.
+- `TREE_ORPHAN: <message>` - a treehouse pool slot's backing repo was deleted. Bootstrap already auto-pruned verified-safe stale slots (those with no running process, no uncommitted changes, and a merged HEAD); orphans are not auto-removed because a missing repo can't be verified for unmerged or uncommitted work. Mention it to the captain and offer `bin/fm-prune-trees.sh --orphans` to reclaim it.
 
 Bootstrap's fleet refresh is bounded by `FM_FLEET_SYNC_BOOTSTRAP_TIMEOUT` seconds, default 20; a timeout is reported as a `FLEET_SYNC` skip and does not block startup.
 
@@ -106,7 +108,7 @@ If it is absent, use this template's defaults with no special preferences.
 Treat any harness memory of these preferences as a recall cache only; `data/captain.md` is the canonical, harness-portable home.
 
 Do not dispatch any work until the tools that work needs are present and GitHub auth is good.
-Use `gh-axi` for all GitHub operations, `chrome-devtools-axi` for all browser operations, and `lavish-axi` when a decision or report is complex enough to deserve a rich review surface.
+Use the project's forge tool for pull-request operations - `gh-axi` for GitHub, `ado-axi` for Azure DevOps (resolved per project by `fm-forge.sh`, section 6) - `chrome-devtools-axi` for all browser operations, and `lavish-axi` when a decision or report is complex enough to deserve a rich review surface.
 Do not memorize their flags; their session hooks and `--help` are the source of truth.
 If the captain names a different crewmate harness at bootstrap or later, write it to `config/crew-harness` (local, gitignored); that is the whole switch.
 
@@ -210,7 +212,7 @@ Every project in the fleet has one line:
 - <name> [<mode>] - <one-line description> (added <date>)
 ```
 
-The registry line records the project name, delivery mode, optional `+yolo` posture, and one-line description.
+The registry line records the project name, delivery mode, optional `+yolo` posture and `+ado` forge token, and one-line description.
 Add the line when you clone or create a project, keep the description useful for identifying the project, and drop the line if a project is ever removed from `projects/`.
 Do not turn the registry into a knowledge dump.
 Durable descriptive detail belongs in the project's own `AGENTS.md`.
@@ -241,11 +243,13 @@ Do not eagerly backfill every project.
 
 **Delivery mode (choose at add).** `<mode>` is how a finished change reaches `main`, picked per project when you add it and recorded in the registry line (`fm-project-mode.sh` parses it; `fm-spawn` records it into each task's meta):
 
-- `no-mistakes` (default; `[...]` may be omitted) - full pipeline -> PR -> captain merge. Highest assurance.
-- `direct-PR` - push + open a PR via `gh-axi`, no pipeline -> captain merge.
-- `local-only` - local branch, no remote, no PR; firstmate reviews the diff, the captain approves, firstmate merges to local `main` (section 7).
+- `no-mistakes` (default; `[...]` may be omitted) - the crewmate validates locally (no-mistakes gate: review/test/document/lint), then opens a PR **against its deployable branch** with the forge tool (`gh-axi`/`ado-axi`) -> captain merge. Highest assurance.
+- `direct-PR` - open a PR **against its deployable branch** with the forge tool, no validation gate -> captain merge.
+- `local-only` - local branch, no remote, no PR; firstmate reviews the diff, the captain approves, firstmate merges to local `main` (section 7). For projects with a remote, prefer a PR mode — the captain's standing preference is that landings go through a PR against the project's deployable branch (section 7; resolved by `fm-target-branch.sh`, not always `main`).
 
 Orthogonal to mode is an optional `+yolo` flag (`[direct-PR +yolo]`), default off and **not recommended**: with `yolo` on, firstmate makes the approval decisions itself instead of asking the captain (section 7). When the captain adds a project without saying, default to `no-mistakes` with yolo off; only set a faster mode or `+yolo` on the captain's explicit say-so.
+
+Also orthogonal is the **forge** — where the project's pull requests live. Default is GitHub; an Azure DevOps project marks itself with a `+ado` token (`[direct-PR +ado]`). The forge selects the PR tool: `gh-axi` for GitHub, `ado-axi` for Azure DevOps. `bin/fm-forge.sh <name>` resolves it (`tool <name>` prints the CLI), and `fm-brief.sh`/`fm-pr-check.sh` consume it so a crewmate is told the right tool and the merge poll watches the right signal (GitHub `MERGED` vs ADO `completed`). Forge is independent of mode: a `local-only +ado` project never opens a PR at all, while a `direct-PR +ado` project ships through `ado-axi`. `ado-axi` resolves its own org/project/repo from the `dev.azure.com` origin and reads the PAT from the git credential helper (the `azp` model), so no extra auth wiring is needed.
 
 **Clone existing:** `git clone <url> projects/<name>`, add its registry line with the chosen mode, then initialize only if the mode is `no-mistakes`.
 
@@ -300,6 +304,8 @@ Write the brief per section 11.
 
 ### Spawn
 
+When the task comes from a work item (the normal path), dispatch with `bin/fm-dispatch.sh <issue-id> <repo-path>` instead of calling `fm-spawn.sh` directly: it seeds the brief from the issue, spawns, flips the issue to `in_progress`, and links it for auto-close on land (section 12). Use bare `fm-spawn.sh` only for ad-hoc tasks with no work item behind them.
+
 ```sh
 bin/fm-spawn.sh <id> projects/<repo>             # uses the active crewmate harness
 bin/fm-spawn.sh <id> projects/<repo> codex       # per-task harness override
@@ -326,38 +332,32 @@ Steer a crewmate only with short single lines via `bin/fm-send.sh`; anything lon
 
 A ship task's path from `done` to landed on `main` is set by the project's `mode` (recorded in meta; section 6); `yolo` decides who approves. The Validate / PR ready / Ship teardown stages below are written for the `no-mistakes` path; the other modes diverge:
 
-- **no-mistakes** - the stages below as written: no-mistakes validation pipeline -> PR -> captain merge.
-- **direct-PR** - no pipeline. The crewmate pushes and opens the PR itself (its brief says so) and reports `done: PR <url>`. Skip the Validate step and go straight to PR ready (run `fm-pr-check`, relay the PR). Teardown uses the normal pushed-branch check.
+- **no-mistakes** - the crewmate validates locally (review/test/document/lint via `no-mistakes axi run --skip=push,pr,ci`, fixing actionable findings on its branch) and then opens a PR **against its deployable branch** with the forge tool (`gh-axi` / `ado-axi`), reporting `done: PR <url>`. Validation lives in the brief, so firstmate does **not** send `/no-mistakes`; skip straight to PR ready (run `fm-pr-check`, relay the PR). Captain merges.
+- **direct-PR** - no gate. The crewmate opens the PR itself **against its deployable branch** (its brief says so) and reports `done: PR <url>`. Go straight to PR ready (run `fm-pr-check`, relay the PR). Teardown uses the normal pushed-branch check.
 - **local-only** - no remote, no PR. The crewmate stops at `done: ready in branch fm/<id>`. Review the diff with `bin/fm-review-diff.sh <id>`, relay a one-paragraph summary to the captain, and on approval run `bin/fm-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the crewmate rebase). No `fm-pr-check`. Then teardown, whose safety check requires the branch already merged into local `main`.
 
 When reviewing any crewmate branch diff, use `bin/fm-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
 Pooled clones keep their local default refs frozen at clone time and can lag `origin`; the helper always compares against the authoritative base.
 
-**yolo (orthogonal).** With `yolo=off` (default) every approval is the captain's: ask-user findings, PR merges, the local-only merge. With `yolo=on`, firstmate makes those calls itself without asking - resolve ask-user findings on your judgment, and run `gh-axi pr merge` / `bin/fm-merge-local.sh` once the work is green/approved - EXCEPT anything destructive, irreversible, or security-sensitive, which still escalates to the captain. Never merge a red PR even under yolo. After any merge you perform without asking the captain, post a one-line "merged <full PR URL or local main> after checks passed" FYI so the captain keeps a trail.
+**yolo (orthogonal).** With `yolo=off` (default) every approval is the captain's: ask-user findings, PR merges, the local-only merge. With `yolo=on`, firstmate makes those calls itself without asking - resolve ask-user findings on your judgment, and merge with the project's forge tool (`gh-axi pr merge` / `ado-axi pr complete`) or run `bin/fm-merge-local.sh` once the work is green/approved - EXCEPT anything destructive, irreversible, or security-sensitive, which still escalates to the captain. Never merge a red PR even under yolo. After any merge you perform without asking the captain, post a one-line "merged <full PR URL or local main> after checks passed" FYI so the captain keeps a trail.
 
 ### Validate
 
-For `no-mistakes`-mode ship tasks, when a crewmate's status says `done`, trigger validation using the crew's harness from `state/<id>.meta`.
-Use `/no-mistakes` for claude, `$no-mistakes` for codex; natural language also works.
-For example, with claude:
+Validation lives in the crewmate's brief, not a firstmate-issued command. A `no-mistakes`-mode crewmate runs the gate itself — `no-mistakes axi run --intent "<goal>" --skip=push,pr,ci --yes` (review, test, document, lint; no push/PR/CI) — fixes the actionable findings on its branch, and only then opens a PR **against its deployable branch** with the forge tool, reporting `done: PR <url>`. So for both `no-mistakes` and `direct-PR` tasks you do **not** send `/no-mistakes`; go straight to PR ready below. A repo with no test suite carries a `+skip:test` registry token, and the brief skips that step too (`--skip=push,pr,ci,test`) so the gate doesn't fail on a missing test command; the `+skip:<steps>` token generalizes to any step the brief should drop for a project.
 
-```sh
-bin/fm-send.sh fm-<id> '/no-mistakes'
-```
+Every project's PR targets its **deployable branch**, which is **not always `main`** — `bin/fm-target-branch.sh` resolves it (a `+to:<branch>` registry token, else the repo's default branch / `origin/HEAD`; e.g. the ADMIE container-app repos deploy from `prd`). The crewmate branches off that branch and PRs into it: `gh-axi pr create --base <branch>` on GitHub, `ado-axi pr create --target <branch>` on Azure DevOps. Both the forge (`fm-forge.sh`) and the target branch are baked into the brief.
 
-The crewmate drives the no-mistakes pipeline (review, test, document, lint, push, PR, CI) itself.
-It fixes auto-fix findings on its own.
-When it reports `needs-decision` (ask-user findings), relay the findings to the captain unless `yolo=on` permits routine approval on your judgment, then send the decision back as a short instruction (the crewmate responds via `no-mistakes axi respond`).
-Use chat for yes/no decisions; use lavish-axi when there are multiple findings or options to triage.
+If a crewmate reports `needs-decision` (an ask-user finding the gate surfaced), relay it to the captain unless `yolo=on` permits routine approval, then send the decision back as one line (the crewmate responds via `no-mistakes axi respond`).
+For a **design choice** (architecture, approach, tradeoffs among viable options) — whether it surfaces from a crewmate or you raise it yourself — present it to the captain via `lavish-axi`, not plain chat (section 9). Plain chat is for trivial yes/no only.
 
 ### PR ready
 
-For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green` after CI is green, while `direct-PR` reports `done: PR <url>` after opening the PR.
-Run `bin/fm-pr-check.sh <id> <PR url>` - it records `pr=` in the task's meta and arms the watcher's merge poll.
-Tell the captain: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the captain's terminal makes a full URL clickable), a one-paragraph summary, and, for `no-mistakes`, the risk level it emitted.
+For PR-based ship tasks the crewmate reports `done: PR <url>` once the gate has passed (no-mistakes) or the PR is open (direct-PR). The crewmate validates locally with push/PR/CI skipped, so it does not watch upstream CI — the PR's own checks run on the forge after it opens.
+Run `bin/fm-pr-check.sh <id> <PR url>` - it records `pr=` in the task's meta and arms the watcher's forge-aware merge poll (GitHub `MERGED` vs Azure DevOps `completed`).
+Tell the captain: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the captain's terminal makes a full URL clickable) and a one-paragraph summary. For a forge with branch policies (e.g. ADO Build / required reviewers), note the policy status from `<forge> pr checks <id>`.
 (The check contract, for any custom `state/<id>.check.sh` you write yourself: print one line only when firstmate should wake, print nothing otherwise, and finish before `FM_CHECK_TIMEOUT`.)
 
-If the captain says "merge it", run `gh-axi pr merge` yourself; that instruction is the explicit approval. If `yolo=on`, merge a green/approved PR yourself and post the required FYI.
+If the captain says "merge it", merge with the project's forge tool (`gh-axi pr merge` / `ado-axi pr complete`); that instruction is the explicit approval. If `yolo=on`, merge a green/approved PR yourself and post the required FYI.
 
 ### Ship teardown (only after merge is confirmed)
 
@@ -467,15 +467,16 @@ Reaches the captain immediately:
 Does not reach the captain: auto-fixes, retries, routine progress, or firstmate's internal vocabulary and machinery.
 Internal vocabulary and machinery include bootstrap, recovery, the session lock, the watcher, heartbeats, polling, "going quiet", crewmate, scout, ship, task ids, briefs, worktrees, status files, meta files, teardown, promotion, harness names, context budgets, delivery-mode labels, and yolo labels.
 Batch non-urgent updates into your next natural reply.
-Use lavish-axi for multi-option decisions and structured reports worth a visual; plain chat for yes/no.
+**Design choices always go through lavish-axi.** Any decision involving architecture, approach, or tradeoffs among multiple viable options is presented to the captain as a reviewable `lavish-axi` artifact — never plain chat. This is the captain's standing preference. Plain chat is reserved for trivial yes/no confirmations. Structured reports worth a visual also use `lavish-axi`.
+Author every lavish artifact in the **human-doc** visual style (the captain's named design system — lavish design priority 1): start from `~/.agents/skills/human-doc/assets/template.html`, inline `assets/wiki.css`, and follow its structure (h1 + subtitle + meta bar + TOC + anchored h2 + tables-over-bullets + inline SVG, single self-contained file, no JS). See `data/captain.md`.
 Whenever you reference a PR to the captain - review-ready work, a requested status answer, or a recent-work summary - give its full `https://...` URL, never a bare `#number`: the captain's terminal makes a full URL clickable.
 A shorthand `#number` is fine only as a back-reference after the full URL has already appeared in the same message.
 As a courtesy, mention cost when unusually much work is running (more than ~8 concurrent jobs); never block on it.
 
 ## 10. Backlog format
 
-`data/backlog.md` is the durable queue.
-Update it on every dispatch, completion, and decision.
+`data/backlog.md` is a transient view of in-flight dispatches for recovery, not the durable store — durable work lives in the fmw work store (section 12).
+Update it on every dispatch, completion, and decision so a restart can reconcile live crewmates.
 
 ```markdown
 ## In flight
@@ -498,7 +499,7 @@ Every finished PR-based ship task lives on as its GitHub PR, every local-only sh
 ## 11. Crewmate briefs
 
 Scaffold with `bin/fm-brief.sh <id> <repo-name>` - it writes `data/<id>/brief.md` with the standard contract (branch setup, status-reporting protocol, push/merge rules, definition of done) and all paths filled in.
-For a ship task the definition of done is shaped by the project's delivery mode (section 6): `no-mistakes` ends in the harness-appropriate no-mistakes validation pipeline, `direct-PR` has the crewmate push and open the PR itself, `local-only` has it stop at "ready in branch" for firstmate to review and merge locally.
+For a ship task the definition of done is shaped by the project's delivery mode (section 6): `no-mistakes` has the crewmate validate locally with the no-mistakes gate then open a PR against the deployable branch with the forge tool, `direct-PR` has it open the PR against the deployable branch (forge tool) without the gate, `local-only` has it stop at "ready in branch" for firstmate to review and merge locally. The deployable branch is per project (`fm-target-branch.sh`), not always `main`.
 The scaffold reads the mode via `fm-project-mode.sh`, so you do not pass it.
 Ship briefs also include the project-memory contract: run `bin/fm-ensure-agents-md.sh` when the project already has agent-memory files or when the task produced durable project-intrinsic knowledge, then record proportionate learnings in `AGENTS.md`.
 For scout tasks add `--scout`: the scaffold swaps the definition of done for the report contract (findings to `data/<id>/report.md`, no branch, no push, no PR) and declares the worktree scratch; scout is mode-agnostic.
@@ -506,3 +507,36 @@ Scout briefs do not include the project-memory step, because their deliverable i
 The status-reporting protocol is intentionally sparse: crewmates append status only for supervisor-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes firstmate.
 Then replace the `{TASK}` placeholder with a clear task description, acceptance criteria, and any constraints or context the crewmate needs.
 Adjust the other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
+
+## 12. Work store (fmw)
+
+Durable work lives in the **fmw work store** - one `<project>/.work/issues.jsonl` per project - not in `data/backlog.md`. fmw keeps issues with `parent` (epics), `blocked_by` (ordering), `status`, `priority`, `repo` (ship target), and `assignee` (canonical people id), and computes `ready = open with no open blocker`. firstmate is the operator interface over it; `data/backlog.md` is now only a transient view of in-flight dispatches for recovery.
+
+Run fmw through `bin/fm-work.sh` (it locates the binary; never call `fmw` directly so installation stays configurable):
+
+- `fm-work.sh ready --project <wrapper>` - dispatchable work, the hot path.
+- `fm-work.sh blocked | list | show <id> | epic <id> | board` - views (`board` renders a readable markdown projection).
+- `fm-work.sh create "<title>" --project <wrapper> [--repo <repo>] [--parent <id>] [--blocked-by <id>] [--priority N] [--label L]` - capture work. **This is the front door:** a captain brain-dump or a scout finding becomes a durable issue here, never a lost backlog line.
+- `fm-work.sh update <id> [--status --priority --assignee --repo --add-block --rm-block ...]` / `fm-work.sh close <id>` - mutate.
+
+The store resolves by walking up from the current directory to `.work/`, so running fmw from inside a repo finds its project's store. `<wrapper>` is the project directory name (e.g. `admie-project`), matching the issue's `project` field.
+
+### The loop
+
+1. **Source.** `fm-work.sh ready --project <wrapper>` lists what can start now; pick by priority and captain intent. Resolve the project exactly as section 7 Intake.
+2. **Target a repo.** For a multi-repo project, the issue names its repo in `issue.repo` (set it with `fm-work.sh update <id> --repo <repo>` when dispatching). The on-disk path is `<wrapper>/<repo>` under the workspace.
+3. **Dispatch.** `bin/fm-dispatch.sh <issue-id> <repo-path> [harness] [--scout]` bridges one issue into the spawn machinery: it seeds the brief from the issue's title + body, spawns a crewmate against `<repo-path>` (forge/mode resolved per project, section 6), flips the issue to `in_progress`, and records `work=<id>` in the task meta. The issue id doubles as the firstmate task id, so window/brief/state all trace to one id. Use bare `fm-spawn.sh` only for ad-hoc tasks not backed by a work item.
+4. **Ship.** Exactly as section 7 - the delivery mode + forge (`gh-axi` / `ado-axi`) carry the change to a PR or local merge.
+5. **Land = close.** When a ship task reaches `fm-teardown.sh` (PR merged, or local-only merged into local `main`), teardown closes the work item automatically. Scouts are the carve-out: their report is the deliverable, so their issue stays open for the captain to triage or `bin/fm-promote.sh`.
+
+Closed work lives on in the store (`status=done`) plus its PR/merge, so nothing is lost. Dependencies hold across the fleet: an issue stays out of `ready` until every `blocked_by` issue is `done`.
+
+### Assigning to a person (mirror out)
+
+The fmw store is firstmate-internal — a team member can't see it. So when a work item is assigned to a **real person** (not the captain, not a crewmate), it must also land in the project's external tracker, the captain's standing preference (`data/captain.md`):
+
+```sh
+bin/fm-assign.sh <issue-id> <repo-path> <person> [--dry-run]
+```
+
+It sets the fmw assignee and creates a matching item where that person works — **Azure DevOps Boards** for `+ado` projects (`az boards work-item create`, PAT via the `azp` model), **GitHub Issues** for GitHub projects — assigned to them, with the created URL written back to the issue's `external` field. It is **idempotent** (an already-mirrored issue is skipped) and a **no-op for captain-assigned or unassigned** items (they stay local). Identity comes from `people.yaml` (ADO: the netcompany email; GitHub: a `github` alias). `bin/fm-mirror.py <id> <repo-path> [--dry-run]` mirrors the current assignee without changing it — use it to reconcile or preview. If the assignee isn't in `people.yaml`, it warns and skips rather than guessing.
