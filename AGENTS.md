@@ -304,6 +304,13 @@ Then classify readiness:
 Keep dependency judgment coarse: same repo plus overlapping area means serialize; everything else runs parallel.
 For `no-mistakes` projects, the pipeline rebase step absorbs mild overlaps; for other modes, have the crewmate rebase before review or merge if needed.
 
+For substantial scout tasks, do a brief context inventory before dispatch.
+The brief should name the source classes the crewmate must inspect, not just the question:
+code/config, docs/data directories or exports named by the captain, production evidence such as logs/traces/analytics/feedback, and prior reports or PR comments.
+Keep the inventory generic unless the project itself owns the fact.
+Project-specific paths, datasets, runbooks, and recurring sharp edges belong in that project's committed `AGENTS.md`, delivered through that project's normal PR path, not in firstmate's shared instructions.
+When raw user or production data is in scope, tell the crewmate to inspect schema and aggregates first, avoid quoting raw content by default, and promote raw examples into fixtures only after review, redaction, and an explicit source/provenance decision.
+
 Write the brief per section 11.
 
 ### Spawn
@@ -447,11 +454,12 @@ Silence is the correct state while a healthy background watcher is waiting.
 1. Peek the pane.
 2. Crewmate is waiting on a question its brief already answers: answer in one line via fm-send.
 3. Crewmate is confused or looping: interrupt with the adapter's interrupt key (the window's harness is recorded as `harness=` in `state/<id>.meta`; e.g. `bin/fm-send.sh <window> --key Escape`), then redirect with one corrective line.
-4. Crewmate is genuinely wedged after redirection: exit the agent with the adapter's exit command, relaunch with the same brief plus a `progress so far` note you append to it.
+4. Scout report stall: if a scout says it has enough evidence or is "writing the report" but `data/<id>/report.md` is still missing or empty after a short window, interrupt once and instruct it to write the report now from the evidence already gathered, then append `done` or `failed`.
+5. Crewmate is genuinely wedged after redirection: exit the agent with the adapter's exit command, relaunch with the same brief plus a `progress so far` note you append to it.
    Genuine wedging means looping, unresponsive, repeating the same obstacle, or truly dead.
    A low context reading is not wedging; modern harnesses auto-compact and keep going.
    The worktree and commits persist; this is cheap.
-5. Second relaunch fails too: write `failed` to backlog, tell the captain with evidence.
+6. Second relaunch fails too: write `failed` to backlog, tell the captain with evidence.
 
 ## 9. Escalation and captain etiquette
 
@@ -511,6 +519,9 @@ For scout tasks add `--scout`: the scaffold swaps the definition of done for the
 Scout briefs do not include the project-memory step, because their deliverable is a report rather than a committed project change.
 The status-reporting protocol is intentionally sparse: crewmates append status only for supervisor-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes firstmate.
 Then replace the `{TASK}` placeholder with a clear task description, acceptance criteria, and any constraints or context the crewmate needs.
+For substantial scouts, include a context inventory: relevant code/config, docs/data/export locations, production evidence sources, prior reports or PR comments, and any raw-data handling boundaries.
+Scout reports should be written incrementally, using structured evidence/findings/follow-up tables when the topic has multiple records or candidate actions.
+If a scout encounters raw user or production data, the report should describe schema, counts, aggregate signals, and restricted pointers by default; raw content belongs in the report only when it is necessary, approved, and redacted.
 Adjust the other sections only when the task genuinely deviates from the standard ship-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
 
 ## 12. Work store (fmw)
