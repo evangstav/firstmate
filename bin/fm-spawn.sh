@@ -7,7 +7,10 @@
 #   is treated as a RAW launch command - the escape hatch for verifying new adapters.
 #   --scout records kind=scout in the task's meta (report deliverable, scratch worktree;
 #   see AGENTS.md section 7); the default is kind=ship.
-# Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
+#   <project-dir> may be a firstmate-owned clone (projects/<repo>) or a referenced-in-place
+#   checkout elsewhere on disk; delivery policy is resolved by the dir's basename, so a
+#   referenced-in-place registry name must match that basename (AGENTS.md section 6).
+# Batch dispatch: pass one or more `id=repo-path` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
 #   source of truth; a shared --scout applies to every pair. The loop lives here, in bash,
