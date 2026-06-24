@@ -108,7 +108,7 @@ If it is absent, use this template's defaults with no special preferences.
 Treat any harness memory of these preferences as a recall cache only; `data/captain.md` is the canonical, harness-portable home.
 
 Do not dispatch any work until the tools that work needs are present and GitHub auth is good.
-Use the project's forge tool for pull-request operations - `gh-axi` for GitHub, `ado-axi` for Azure DevOps (resolved per project by `fm-forge.sh`, section 6) - `chrome-devtools-axi` for all browser operations, and `lavish-axi` when a decision or report is complex enough to deserve a rich review surface.
+Use the project's forge tool for pull-request operations - `gh-axi` for GitHub, `ado-axi` for Azure DevOps, `gl-axi` for GitLab (resolved per project by `fm-forge.sh`, section 6) - `chrome-devtools-axi` for all browser operations, and `lavish-axi` when a decision or report is complex enough to deserve a rich review surface.
 Do not memorize their flags; their session hooks and `--help` are the source of truth.
 If the captain names a different crewmate harness at bootstrap or later, write it to `config/crew-harness` (local, gitignored); that is the whole switch.
 
@@ -216,7 +216,7 @@ Every project in the fleet has one line:
 - <name> [<mode>] - <one-line description> (added <date>)
 ```
 
-The registry line records the project name, delivery mode, optional `+yolo` posture and `+ado` forge token, and one-line description.
+The registry line records the project name, delivery mode, optional `+yolo` posture and `+ado`/`+gitlab` forge token, and one-line description.
 Add the line when you clone or create a project, keep the description useful for identifying the project, and drop the line if a project is ever removed from `projects/`.
 Do not turn the registry into a knowledge dump.
 Durable descriptive detail belongs in the project's own `AGENTS.md`.
@@ -253,7 +253,7 @@ Do not eagerly backfill every project.
 
 Orthogonal to mode is an optional `+yolo` flag (`[direct-PR +yolo]`), default off and **not recommended**: with `yolo` on, firstmate makes the approval decisions itself instead of asking the captain (section 7). When the captain adds a project without saying, default to `no-mistakes` with yolo off; only set a faster mode or `+yolo` on the captain's explicit say-so.
 
-Also orthogonal is the **forge** — where the project's pull requests live. Default is GitHub; an Azure DevOps project marks itself with a `+ado` token (`[direct-PR +ado]`). The forge selects the PR tool: `gh-axi` for GitHub, `ado-axi` for Azure DevOps. `bin/fm-forge.sh <name>` resolves it (`tool <name>` prints the CLI), and `fm-brief.sh`/`fm-pr-check.sh` consume it so a crewmate is told the right tool and the merge poll watches the right signal (GitHub `MERGED` vs ADO `completed`). Forge is independent of mode: a `local-only +ado` project never opens a PR at all, while a `direct-PR +ado` project ships through `ado-axi`. `ado-axi` resolves its own org/project/repo from the `dev.azure.com` origin and reads the PAT from the git credential helper (the `azp` model), so no extra auth wiring is needed.
+Also orthogonal is the **forge** — where the project's pull requests live. Default is GitHub; an Azure DevOps project marks itself with a `+ado` token (`[direct-PR +ado]`), a GitLab project with a `+gitlab` token (`[no-mistakes +gitlab]`). The forge selects the PR tool: `gh-axi` for GitHub, `ado-axi` for Azure DevOps, `gl-axi` for GitLab. `bin/fm-forge.sh <name>` resolves it (`tool <name>` prints the CLI), and `fm-brief.sh`/`fm-pr-check.sh` consume it so a crewmate is told the right tool and the merge poll watches the right signal (GitHub `MERGED` vs ADO `completed` vs GitLab MR state `merged`). Forge is independent of mode: a `local-only +ado` project never opens a PR at all, while a `direct-PR +ado` project ships through `ado-axi` and a `direct-PR +gitlab` project through `gl-axi`. `ado-axi` resolves its own org/project/repo from the `dev.azure.com` origin and reads the PAT from the git credential helper (the `azp` model); `gl-axi` likewise auto-detects host + project from the GitLab origin and reads its token from the git credential helper, so neither needs extra auth wiring. On GitLab a pull request is a **merge request** — `gl-axi mr create --target <branch>`.
 
 **Clone existing:** `git clone <url> projects/<name>`, add its registry line with the chosen mode, then initialize only if the mode is `no-mistakes`.
 
@@ -350,7 +350,7 @@ Pooled clones keep their local default refs frozen at clone time and can lag `or
 
 Validation lives in the crewmate's brief, not a firstmate-issued command. A `no-mistakes`-mode crewmate runs the gate itself — `no-mistakes axi run --intent "<goal>" --skip=push,pr,ci --yes` (review, test, document, lint; no push/PR/CI) — fixes the actionable findings on its branch, and only then opens a PR **against its deployable branch** with the forge tool, reporting `done: PR <url>`. So for both `no-mistakes` and `direct-PR` tasks you do **not** send `/no-mistakes`; go straight to PR ready below. A repo with no test suite carries a `+skip:test` registry token, and the brief skips that step too (`--skip=push,pr,ci,test`) so the gate doesn't fail on a missing test command; the `+skip:<steps>` token generalizes to any step the brief should drop for a project.
 
-Every project's PR targets its **deployable branch**, which is **not always `main`** — `bin/fm-target-branch.sh` resolves it (a `+to:<branch>` registry token, else the repo's default branch / `origin/HEAD`; e.g. the ADMIE container-app repos deploy from `prd`). The crewmate branches off that branch and PRs into it: `gh-axi pr create --base <branch>` on GitHub, `ado-axi pr create --target <branch>` on Azure DevOps. Both the forge (`fm-forge.sh`) and the target branch are baked into the brief.
+Every project's PR targets its **deployable branch**, which is **not always `main`** — `bin/fm-target-branch.sh` resolves it (a `+to:<branch>` registry token, else the repo's default branch / `origin/HEAD`; e.g. the ADMIE container-app repos deploy from `prd`). The crewmate branches off that branch and PRs into it: `gh-axi pr create --base <branch>` on GitHub, `ado-axi pr create --target <branch>` on Azure DevOps, `gl-axi mr create --target <branch>` on GitLab. Both the forge (`fm-forge.sh`) and the target branch are baked into the brief.
 
 If a crewmate reports `needs-decision` (an ask-user finding the gate surfaced), relay it to the captain unless `yolo=on` permits routine approval, then send the decision back as one line (the crewmate responds via `no-mistakes axi respond`).
 For a **design choice** (architecture, approach, tradeoffs among viable options) — whether it surfaces from a crewmate or you raise it yourself — present it to the captain via `lavish-axi`, not plain chat (section 9). Plain chat is for trivial yes/no only.
@@ -358,7 +358,7 @@ For a **design choice** (architecture, approach, tradeoffs among viable options)
 ### PR ready
 
 For PR-based ship tasks the crewmate reports `done: PR <url>` once the gate has passed (no-mistakes) or the PR is open (direct-PR). The crewmate validates locally with push/PR/CI skipped, so it does not watch upstream CI — the PR's own checks run on the forge after it opens.
-Run `bin/fm-pr-check.sh <id> <PR url>` - it records `pr=` in the task's meta and arms the watcher's forge-aware merge poll (GitHub `MERGED` vs Azure DevOps `completed`).
+Run `bin/fm-pr-check.sh <id> <PR url>` - it records `pr=` in the task's meta and arms the watcher's forge-aware merge poll (GitHub `MERGED` vs Azure DevOps `completed` vs GitLab MR state `merged`).
 Tell the captain: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the captain's terminal makes a full URL clickable) and a one-paragraph summary. For a forge with branch policies (e.g. ADO Build / required reviewers), note the policy status from `<forge> pr checks <id>`.
 (The check contract, for any custom `state/<id>.check.sh` you write yourself: print one line only when firstmate should wake, print nothing otherwise, and finish before `FM_CHECK_TIMEOUT`.)
 
@@ -544,4 +544,4 @@ The fmw store is firstmate-internal — a team member can't see it. So when a wo
 bin/fm-assign.sh <issue-id> <repo-path> <person> [--dry-run]
 ```
 
-It sets the fmw assignee and creates a matching item where that person works — **Azure DevOps Boards** for `+ado` projects (`az boards work-item create`, PAT via the `azp` model), **GitHub Issues** for GitHub projects — assigned to them, with the created URL written back to the issue's `external` field. It is **idempotent** (an already-mirrored issue is skipped) and a **no-op for captain-assigned or unassigned** items (they stay local). Identity comes from `people.yaml` (ADO: the netcompany email; GitHub: a `github` alias). `bin/fm-mirror.py <id> <repo-path> [--dry-run]` mirrors the current assignee without changing it — use it to reconcile or preview. If the assignee isn't in `people.yaml`, it warns and skips rather than guessing.
+It sets the fmw assignee and creates a matching item where that person works — **Azure DevOps Boards** for `+ado` projects (`az boards work-item create`, PAT via the `azp` model), **GitLab Issues** for `+gitlab` projects (`gl-axi issue create`, token via the git credential helper), **GitHub Issues** for GitHub projects — assigned to them, with the created URL written back to the issue's `external` field. It is **idempotent** (an already-mirrored issue is skipped) and a **no-op for captain-assigned or unassigned** items (they stay local). Identity comes from `people.yaml` (ADO: the netcompany email; GitHub: a `github` alias; GitLab: a `gitlab` alias). `bin/fm-mirror.py <id> <repo-path> [--dry-run]` mirrors the current assignee without changing it — use it to reconcile or preview. If the assignee isn't in `people.yaml`, it warns and skips rather than guessing.
