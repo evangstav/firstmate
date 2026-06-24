@@ -3,12 +3,13 @@
 
 The fmw store is firstmate-internal. When a work item is assigned to a real team member
 (not the captain, not a crewmate), it must also appear where that person works — Azure
-DevOps Boards for `+ado` projects, GitHub Issues for GitHub projects — so the assignee can
-actually see it (captain preference, data/captain.md).
+DevOps Boards for `+ado` projects, GitLab Issues for `+gitlab` projects, GitHub Issues for
+GitHub projects — so the assignee can actually see it (captain preference, data/captain.md).
 
 Idempotent: records the created item's URL in the fmw issue's `external` field and skips if
 already set. Captain-assigned and unassigned items stay local. Best-effort identity from
-people.yaml (ADO uses the netcompany email; GitHub uses a `github` alias if present).
+people.yaml (ADO uses the netcompany email; GitHub uses a `github` alias if present; GitLab
+uses a `gitlab` alias if present).
 
 Usage: fm-mirror.py <issue-id> <repo-path> [--dry-run] [--type <ADO work-item type>]
 """
@@ -96,6 +97,14 @@ def github_handle(p):
         m = re.match(r"\d+\+([^@]+)@users\.noreply\.github\.com", e)
         if m:
             return m.group(1)
+    return None
+
+
+def gitlab_handle(p):
+    """GitLab username for --assignee, from an explicit `gitlab:` alias in people.yaml."""
+    al = p.get("aliases", {}) or {}
+    if al.get("gitlab"):
+        return al["gitlab"][0]
     return None
 
 
@@ -208,6 +217,26 @@ def main():
         url = f"{org_url}/{project}/_workitems/edit/{wid}"
         if assigned:
             print(f"  (assigned in ADO to: {assigned})")
+    elif forge == "gitlab":
+        # gl-axi auto-detects host + project from the repo's GitLab origin (run with cwd=repo)
+        # and reads its token from the git credential helper, mirroring the azp/gh model.
+        handle = gitlab_handle(person)
+        cmd = ["gl-axi", "issue", "create", "--title", title, "--description", body]
+        if handle:
+            cmd += ["--assignee", handle]
+        else:
+            print(f"fm-mirror: no GitLab handle for {assignee} — creating unassigned "
+                  f"(add a `gitlab:` alias to people.yaml)", file=sys.stderr)
+        if args.dry_run:
+            print(f"DRY-RUN [gitlab] would create via gl-axi in {repo}, assignee={handle}:")
+            print("  " + " ".join(f'"{c}"' if " " in c else c for c in cmd))
+            return
+        r = sh(cmd, cwd=repo)
+        if r.returncode != 0:
+            die(f"gl-axi issue create failed: {r.stderr.strip()[:300]}")
+        # gl-axi prints a TOON `url:` field for the created issue.
+        m = re.search(r'^\s*url:\s*"?([^"\s]+)"?', r.stdout, re.M)
+        url = m.group(1) if m else r.stdout.strip().splitlines()[-1]
     else:  # github
         ownerrepo = gh_owner_repo(repo)
         if not ownerrepo:

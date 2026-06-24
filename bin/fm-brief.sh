@@ -31,7 +31,7 @@ done
 ID=${POS[0]}
 REPO=${POS[1]}
 
-# Forge tool: gh-axi for GitHub projects, ado-axi for Azure DevOps (+ado in the registry).
+# Forge tool: gh-axi for GitHub projects, ado-axi for Azure DevOps (+ado), gl-axi for GitLab (+gitlab).
 FORGE_TOOL=$("$FM_ROOT/bin/fm-forge.sh" tool "$REPO" 2>/dev/null || echo gh-axi)
 FORGE=$("$FM_ROOT/bin/fm-forge.sh" "$REPO" 2>/dev/null || echo github)
 # Target/deployable branch - NOT always main (e.g. the container-app repos deploy from prd).
@@ -44,8 +44,9 @@ NM_EXTRA=$(awk -v n="$REPO" '$1=="-" && $2==n { for(i=3;i<=NF;i++) if($i ~ /^\+s
 [ -n "$NM_EXTRA" ] && NM_SKIP="$NM_SKIP,$NM_EXTRA"
 # PRs target the project's deployable branch; the create command differs by forge.
 case "$FORGE" in
-  ado) PR_CMD="ado-axi pr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
-  *)   PR_CMD="gh-axi pr create --base $TARGET --fill" ;;
+  ado)    PR_CMD="ado-axi pr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
+  gitlab) PR_CMD="gl-axi mr create --target $TARGET --title \"<concise title>\" --description \"<one-line summary>\"" ;;
+  *)      PR_CMD="gh-axi pr create --base $TARGET --fill" ;;
 esac
 
 BRIEF="$FM_ROOT/data/$ID/brief.md"
@@ -64,24 +65,29 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 This is a SCOUT task: the deliverable is a written report, not a PR.
 The worktree is your laboratory - install, run, edit, and make scratch commits freely; all of it is discarded at teardown.
 The report is the only thing that survives, so anything worth keeping must be in it.
+Create the report file early with headings, then fill it incrementally as evidence appears; do not save all writing for the final turn.
 
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
 3. Use $FORGE_TOOL for pull-request / forge operations and chrome-devtools-axi for browser operations.
-4. Report status by appending one line:
+4. Keep project-specific facts in the project. If you discover durable project-intrinsic knowledge, record it as a recommendation in the report; do not edit project AGENTS.md during a scout.
+5. For raw user, customer, production, analytics, log, or trace data: inspect schemas, counts, and aggregate signals first. Avoid quoting raw content by default. Use redacted examples or restricted pointers unless raw content is necessary and explicitly allowed by the task.
+6. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $FM_ROOT/state/$ID.status\`
    States: working, needs-decision, blocked, done, failed.
    Each append wakes firstmate, so report sparingly: only phase changes a supervisor
    would act on and the needs-decision/blocked/done/failed states. No step-by-step
    FYI progress lines; firstmate reads your pane for that.
-5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
-6. If a decision belongs to a human (product choices, destructive actions), stop and surface it.
+7. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
+8. If a decision belongs to a human (product choices, destructive actions), stop and surface it.
    For a **design choice** (architecture, approach, tradeoffs among viable options), first lay the options out with \`lavish-axi\` as a reviewable artifact — authored in the human-doc visual style (inline \`~/.agents/skills/human-doc/assets/wiki.css\`, follow \`assets/template.html\`: meta bar, TOC, tables, inline SVG, no JS) — then append \`needs-decision: {one line + the lavish link}\`. For a simple yes/no, a one-line \`needs-decision: {summary}\` is enough. Firstmate replies with the decision.
 
 # Definition of done
 Write your findings to \`$FM_ROOT/data/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
+When there are multiple findings, source records, candidate fixes, or follow-up tasks, use tables with stable identifiers so another worker can act on the report without redoing the scout.
+Include a short "Next actions" section that separates project-specific recommendations from reusable workflow lessons, if any.
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
