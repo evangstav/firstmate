@@ -6,7 +6,9 @@
 # hard-resets the worktree and kills its processes.
 # Scout tasks (kind=scout in meta) carve out of that check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
-# product - teardown proceeds once the report exists, and refuses without it.
+# product - teardown proceeds once the report has real content, and refuses when
+# it is missing or effectively empty (only whitespace and headings), so a stalled
+# scout's lab work is not discarded behind an empty skeleton.
 # Usage: fm-teardown.sh <task-id> [--force]
 #   --force skips the unpushed-work check. Only use it when the captain has
 #   explicitly said to discard the work.
@@ -50,11 +52,20 @@ default_branch() {
 
 if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   if [ "$KIND" = scout ]; then
-    # Scout worktrees are scratch by contract, but only once the deliverable exists.
+    # Scout worktrees are scratch by contract, but only once the deliverable has
+    # real content. An empty file, or a write-early skeleton of only whitespace
+    # and headings, does not count - it would let a stalled scout be torn down
+    # with its lab work discarded behind an empty report.
     REPORT="$FM_ROOT/data/$ID/report.md"
     if [ ! -f "$REPORT" ]; then
       echo "REFUSED: scout task $ID has no report at $REPORT." >&2
       echo "The report is the work product. Have the crewmate write it (or get the captain's explicit OK to discard, then --force)." >&2
+      exit 1
+    fi
+    # Real content = any non-blank line that is not just a markdown heading.
+    if ! grep -qvE '^[[:space:]]*(#.*)?$' "$REPORT"; then
+      echo "REFUSED: scout task $ID report at $REPORT is effectively empty (only whitespace/headings)." >&2
+      echo "The report is the work product. Have the crewmate fill it in (or get the captain's explicit OK to discard, then --force)." >&2
       exit 1
     fi
   elif [ "$MODE" = local-only ]; then
